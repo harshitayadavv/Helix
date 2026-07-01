@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+storage/repos/*
+!storage/repos/.gitkeep
+storage/faiss_index*
+!storage/faiss_index/.gitkeep
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+dist/
+build/

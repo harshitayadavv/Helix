@@ -1,0 +1,53 @@
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+websockets==14.1
+
+# --- Settings / validation ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+
+# --- Neo4j ---
+neo4j==5.27.0
+
+# --- PostgreSQL ---
+asyncpg==0.30.0
+sqlalchemy[asyncio]==2.0.36
+alembic==1.14.0
+
+# --- Redis / Celery ---
+redis==5.2.1
+celery[redis]==5.4.0
+
+# --- LangGraph / LangChain / Groq ---
+langgraph==0.2.62
+langchain==0.3.13
+langchain-core==0.3.63
+langchain-groq==0.2.3
+groq==0.15.0
+
+# --- Tree-sitter (AST parsing) ---
+tree-sitter==0.23.2
+tree-sitter-python==0.23.6
+tree-sitter-javascript==0.23.1
+tree-sitter-typescript==0.23.2
+tree-sitter-java==0.23.5
+tree-sitter-cpp==0.23.4
+
+# --- Embeddings / vector search ---
+sentence-transformers==3.3.1
+faiss-cpu==1.9.0.post1
+numpy==1.26.4
+
+# --- Utilities ---
+httpx==0.28.1
+aiofiles==24.1.0
+gitpython==3.1.43
+tenacity==9.0.0
+structlog==24.4.0
+
+# --- Auth (future-proofing) ---
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
