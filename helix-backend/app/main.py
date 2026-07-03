@@ -12,6 +12,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import ai, graph, repository, search
+from app.api.routes import analysis, docs
 from app.config import settings
 from app.core.graph.neo4j_client import neo4j_client
 from app.db.postgres import close_db, init_db
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI Code Intelligence Platform - backend services",
-    version="0.1.0",
+    version="0.2.0",
     debug=settings.APP_DEBUG,
     lifespan=lifespan,
 )
@@ -63,40 +64,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Core pipeline routes ---
 app.include_router(repository.router, prefix="/api/v1/repositories", tags=["repositories"])
-app.include_router(graph.router, prefix="/api/v1/graph", tags=["graph"])
-app.include_router(ai.router, prefix="/api/v1/ai", tags=["ai"])
-app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
+app.include_router(graph.router,      prefix="/api/v1/graph",        tags=["graph"])
+app.include_router(ai.router,         prefix="/api/v1/ai",           tags=["ai"])
+app.include_router(search.router,     prefix="/api/v1/search",       tags=["search"])
+
+# --- Phase 5-9: Analysis routes ---
+app.include_router(analysis.router,   prefix="/api/v1/analysis",     tags=["analysis"])
+
+# --- Phase 8: Documentation generator ---
+app.include_router(docs.router,       prefix="/api/v1/docs",         tags=["docs"])
 
 
 @app.get("/", tags=["health"])
 async def root():
-    return {"service": settings.APP_NAME, "status": "ok"}
+    return {"service": settings.APP_NAME, "status": "ok", "version": "0.2.0"}
 
 
 @app.get("/health", tags=["health"])
 async def health_check():
     neo4j_ok = await neo4j_client.verify_connectivity()
-    return {
-        "status": "ok" if neo4j_ok else "degraded",
-        "neo4j": neo4j_ok,
-    }
+    return {"status": "ok" if neo4j_ok else "degraded", "neo4j": neo4j_ok}
 
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     """
     Real-time channel for repository processing progress updates.
-
-    The frontend connects using a client_id that matches the repo_id
-    returned from the upload endpoint, then receives JSON progress /
-    error events as the ingestion pipeline runs.
+    Connect with the repo_id returned from the upload endpoint.
     """
     await websocket_manager.connect(client_id, websocket)
     try:
         while True:
-            # We only push server -> client, but keep reading so we
-            # detect disconnects (and tolerate client-side pings).
             await websocket.receive_text()
     except WebSocketDisconnect:
         websocket_manager.disconnect(client_id, websocket)
