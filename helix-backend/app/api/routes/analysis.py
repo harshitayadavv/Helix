@@ -331,3 +331,91 @@ def _grade(score: float) -> str:
     if score >= 60:
         return "D"
     return "F"
+
+
+# ---------------------------------------------------------------------------
+# Phase 12 — Performance (added here so /api/v1/analysis/performance works
+# even if perf_compare.py wasn't copied from the phase 11-15 zip)
+# ---------------------------------------------------------------------------
+
+from app.core.analysis.performance_analyzer import PerformanceAnalyzer
+from app.db.postgres import PerformanceIssue
+
+
+class PerformanceIssueOut(BaseModel):
+    id: str
+    pattern_type: str
+    severity: str
+    file_path: str
+    function_name: str
+    line_number: Optional[int]
+    description: str
+    suggestion: str
+
+    class Config:
+        from_attributes = True
+
+
+@router.post("/performance/{repo_id}", summary="Run performance analysis")
+async def run_performance_analysis(repo_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Scans for N+1 queries, blocking async calls, nested loops,
+    and object creation inside loops.
+
+    curl: curl -X POST http://localhost:8001/api/v1/analysis/performance/<repo_id>
+    """
+    analyzer = PerformanceAnalyzer(repo_id=repo_id, db=db)
+    try:
+        issues = await analyzer.analyze()
+    except Exception as exc:
+        logger.exception("Performance analysis failed for repo %s", repo_id)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    summary: dict = {}
+    for i in issues:
+        summary[i.pattern_type] = summary.get(i.pattern_type, 0) + 1
+
+    return {
+        "repo_id": repo_id,
+        "total_issues": len(issues),
+        "summary": summary,
+        "issues": [
+            {
+                "pattern_type": i.pattern_type,
+                "severity": i.severity,
+                "file_path": i.file_path,
+                "function_name": i.function_name,
+                "line_number": i.line_number,
+                "description": i.description,
+                "suggestion": i.suggestion,
+            }
+            for i in issues
+        ],
+    }
+
+
+@router.get("/performance/{repo_id}")
+async def get_performance_issues(repo_id: str, db: AsyncSession = Depends(get_db)):
+    """Return all stored performance issues for a repository.
+
+    curl: curl http://localhost:8001/api/v1/analysis/performance/<repo_id>
+    """
+    result = await db.execute(
+        select(PerformanceIssue)
+        .where(PerformanceIssue.repo_id == repo_id)
+        .order_by(PerformanceIssue.severity)
+    )
+    rows = result.scalars().all()
+    return [
+        PerformanceIssueOut(
+            id=str(r.id),
+            pattern_type=r.pattern_type,
+            severity=r.severity,
+            file_path=r.file_path,
+            function_name=r.function_name,
+            line_number=r.line_number,
+            description=r.description,
+            suggestion=r.suggestion,
+        )
+        for r in rows
+    ]

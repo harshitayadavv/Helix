@@ -1,18 +1,15 @@
 """
-Helix backend - FastAPI application entrypoint.
-
-Wires together: CORS, lifespan startup/shutdown (Neo4j + PostgreSQL),
-the REST API routers, and a WebSocket endpoint used to stream
-repository-processing progress to the frontend in real time.
+Helix backend - FastAPI application entrypoint v0.3.1
+Phases 1-15 all registered here.
 """
 import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ai, graph, repository, search
-from app.api.routes import analysis, docs
+from app.api.routes import ai, analysis, auth, comparison, docs, git, graph, repository, search
 from app.config import settings
 from app.core.graph.neo4j_client import neo4j_client
 from app.db.postgres import close_db, init_db
@@ -27,31 +24,29 @@ logger = logging.getLogger("helix.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting %s backend...", settings.APP_NAME)
-
+    logger.info("Starting %s backend v0.3.1 ...", settings.APP_NAME)
     try:
         await neo4j_client.connect()
         logger.info("Neo4j connection established.")
     except Exception:
-        logger.exception("Failed to connect to Neo4j on startup. The API will still boot.")
-
+        logger.exception("Failed to connect to Neo4j on startup.")
     try:
         await init_db()
         logger.info("PostgreSQL schema ready.")
     except Exception:
-        logger.exception("Failed to initialize PostgreSQL on startup. The API will still boot.")
+        logger.exception("Failed to initialize PostgreSQL on startup.")
 
+    websocket_manager.start_heartbeat()
     yield
-
-    logger.info("Shutting down %s backend...", settings.APP_NAME)
+    websocket_manager.stop_heartbeat()
     await neo4j_client.close()
     await close_db()
 
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="AI Code Intelligence Platform - backend services",
-    version="0.2.0",
+    description="AI Code Intelligence Platform — Phases 1-15",
+    version="0.3.1",
     debug=settings.APP_DEBUG,
     lifespan=lifespan,
 )
@@ -64,22 +59,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Core pipeline routes ---
-app.include_router(repository.router, prefix="/api/v1/repositories", tags=["repositories"])
-app.include_router(graph.router,      prefix="/api/v1/graph",        tags=["graph"])
-app.include_router(ai.router,         prefix="/api/v1/ai",           tags=["ai"])
-app.include_router(search.router,     prefix="/api/v1/search",       tags=["search"])
 
-# --- Phase 5-9: Analysis routes ---
-app.include_router(analysis.router,   prefix="/api/v1/analysis",     tags=["analysis"])
+@app.middleware("http")
+async def add_start_time(request: Request, call_next):
+    request.state.start_time = time.time()
+    return await call_next(request)
 
-# --- Phase 8: Documentation generator ---
-app.include_router(docs.router,       prefix="/api/v1/docs",         tags=["docs"])
+
+# ---------------------------------------------------------------------------
+# Routers — order matters: more specific prefixes first
+# ---------------------------------------------------------------------------
+app.include_router(auth.router,        prefix="/api/v1/auth",         tags=["auth"])
+app.include_router(repository.router,  prefix="/api/v1/repositories", tags=["repositories"])
+app.include_router(git.router,         prefix="/api/v1/repositories", tags=["git"])
+app.include_router(graph.router,       prefix="/api/v1/graph",        tags=["graph"])
+app.include_router(ai.router,          prefix="/api/v1/ai",           tags=["ai"])
+app.include_router(search.router,      prefix="/api/v1/search",       tags=["search"])
+app.include_router(analysis.router,    prefix="/api/v1/analysis",     tags=["analysis"])
+app.include_router(docs.router,        prefix="/api/v1/docs",         tags=["docs"])
+app.include_router(comparison.router,  prefix="/api/v1/comparison",   tags=["comparison"])
 
 
 @app.get("/", tags=["health"])
 async def root():
-    return {"service": settings.APP_NAME, "status": "ok", "version": "0.2.0"}
+    return {"service": settings.APP_NAME, "status": "ok", "version": "0.3.1"}
 
 
 @app.get("/health", tags=["health"])
@@ -91,15 +94,18 @@ async def health_check():
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     """
-    Real-time channel for repository processing progress updates.
-    Connect with the repo_id returned from the upload endpoint.
+    Phase 14 — Enhanced WebSocket.
+    Connect with repo_id as client_id.
+    Client can send: {"subscribe": "<repo_id>"}
+    Server sends: progress | analysis_complete | error | node_added | ping
     """
     await websocket_manager.connect(client_id, websocket)
     try:
         while True:
-            await websocket.receive_text()
+            data = await websocket.receive_text()
+            await websocket_manager.handle_client_message(websocket, data)
     except WebSocketDisconnect:
-        websocket_manager.disconnect(client_id, websocket)
+        websocket_manager.disconnect(websocket)
     except Exception:
-        logger.exception("Unexpected error on websocket for client_id=%s", client_id)
-        websocket_manager.disconnect(client_id, websocket)
+        logger.exception("WS error for client_id=%s", client_id)
+        websocket_manager.disconnect(websocket)
