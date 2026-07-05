@@ -23,6 +23,7 @@ import os
 import shutil
 import uuid
 from collections import defaultdict
+from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -37,7 +38,7 @@ from app.db.postgres import GitCommit
 logger = logging.getLogger("helix.git_analyzer")
 
 # Max commits to analyse (keeps memory bounded on large repos)
-MAX_COMMITS = 500
+MAX_COMMITS = 50
 
 
 @dataclass
@@ -73,7 +74,7 @@ class GitAnalyzer:
     def __init__(self, repo_id: str, db: AsyncSession) -> None:
         self.repo_id = repo_id
         self.db = db
-        self._clone_dir = os.path.join(settings.REPO_STORAGE_PATH, repo_id, "git")
+        self._clone_dir = Path(settings.REPO_STORAGE_PATH) / repo_id / "git"
 
     # ------------------------------------------------------------------
     # Clone
@@ -90,14 +91,14 @@ class GitAnalyzer:
                                       "https://bitbucket.org")):
             raise ValueError("Only public GitHub / GitLab / Bitbucket URLs are supported.")
 
-        os.makedirs(self._clone_dir, exist_ok=True)
+        self._clone_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Cloning %s (branch=%s) → %s", github_url, branch, self._clone_dir)
 
         try:
             await asyncio.to_thread(
                 Repo.clone_from,
                 github_url,
-                self._clone_dir,
+                self._clone_dir.as_posix(), 
                 branch=branch,
                 depth=MAX_COMMITS,      # shallow clone keeps it fast
                 single_branch=True,

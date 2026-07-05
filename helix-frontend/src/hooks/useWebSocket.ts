@@ -1,30 +1,37 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { HelixWebSocket } from '@/lib/websocket';
-import { ProcessingUpdate } from '@/types';
+import { HelixWebSocket, WsMessage } from '@/lib/websocket';
 
-export function useWebSocket(url: string | null) {
-  const [updates, setUpdates] = useState<ProcessingUpdate[]>([]);
-  const [latest, setLatest] = useState<ProcessingUpdate | null>(null);
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8001';
+
+export function useWebSocket(repoId: string | null) {
+  const [messages, setMessages] = useState<WsMessage[]>([]);
+  const [latest, setLatest] = useState<WsMessage | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<HelixWebSocket | null>(null);
 
   useEffect(() => {
-    if (!url) return;
+    if (!repoId) return;
+
     const ws = new HelixWebSocket(
-      url,
-      (update) => {
-        setLatest(update);
-        setUpdates((prev) => [...prev, update]);
+      WS_BASE,
+      repoId,
+      (msg) => {
+        setLatest(msg);
+        setMessages(prev => [...prev, msg]);
       },
-      () => setConnected(false),
+      () => setConnected(true),
       () => setConnected(false)
     );
+
     wsRef.current = ws;
     ws.connect();
-    setConnected(true);
-    return () => ws.disconnect();
-  }, [url]);
 
-  return { updates, latest, connected };
+    return () => {
+      ws.disconnect();
+      wsRef.current = null;
+    };
+  }, [repoId]);
+
+  return { messages, latest, connected };
 }

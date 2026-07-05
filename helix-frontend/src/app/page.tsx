@@ -1,138 +1,103 @@
 'use client';
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { GitBranch, Clock, CheckCircle2, AlertCircle, Plus, Zap } from 'lucide-react';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { TopBar } from '@/components/layout/TopBar';
-import { RepoUploader } from '@/components/upload/RepoUploader';
-import { ProcessingProgress } from '@/components/dashboard/ProcessingProgress';
-import { HelixLoader } from '@/components/loading/HelixLoader';
+import { motion } from 'framer-motion';
+import Link from 'next/link';
+import { Zap, GitBranch, MessageSquare, BarChart3, ArrowRight, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { useNavigateWithDelay } from '@/hooks/useNavigateWithDelay';
-import { cn } from '@/lib/utils';
 
-const MOCK_REPOS = [
-  { id: '1', name: 'helix-backend', language: 'Python', files: 42, status: 'ready', updated: '2 hours ago' },
-  { id: '2', name: 'react-dashboard', language: 'TypeScript', files: 78, status: 'processing', updated: '10 min ago' },
-  { id: '3', name: 'ml-pipeline', language: 'Python', files: 23, status: 'ready', updated: 'Yesterday' },
+const FEATURES = [
+  { icon: GitBranch, title: 'Dependency graphs', desc: 'Visual maps of every import, call, and inheritance chain across your codebase.' },
+  { icon: MessageSquare, title: 'AI-native chat', desc: 'Ask questions about any function, file, or module. Get answers grounded in your actual code.' },
+  { icon: BarChart3, title: 'Code intelligence', desc: 'Auto-detected patterns, hotspots, dead code, and circular dependencies at a glance.' },
+  { icon: Terminal, title: 'Multi-language', desc: 'Python, TypeScript, Go, Rust, and more — parsed with language-aware AST analysis.' },
 ];
 
-const STATUS_CONFIG = {
-  ready: { label: 'Ready', icon: CheckCircle2, color: 'text-green-400' },
-  processing: { label: 'Processing', icon: Clock, color: 'text-yellow-400' },
-  error: { label: 'Error', icon: AlertCircle, color: 'text-red-400' },
-};
-
-export default function DashboardPage() {
-  const [activeRepoId, setActiveRepoId] = useState<string | null>(null);
-  const [showUpload, setShowUpload] = useState(false);
-  const { navigate, pending } = useNavigateWithDelay({ minMs: 2000, maxMs: 6000 });
-  const wsUrl = activeRepoId
-    ? `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/ws/repos/${activeRepoId}/progress`
-    : null;
-  const { latest, connected } = useWebSocket(wsUrl);
-
+export default function Home() {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Dashboard' }]} />
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-white">Repositories</h1>
-                <p className="text-sm text-zinc-500 mt-0.5">{MOCK_REPOS.length} repos analyzed</p>
-              </div>
-              <Button onClick={() => setShowUpload(!showUpload)} className="gap-2">
-                <Plus size={15} />
-                New repository
-              </Button>
-            </div>
-
-            {showUpload && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-[#0d0d14] border border-[#1e1e2e] rounded-2xl p-6"
-              >
-                <div className="text-sm font-medium text-zinc-300 mb-4">Upload repository ZIP</div>
-                <div className="flex gap-6 items-start">
-                  <RepoUploader
-                    onUploadComplete={(id) => {
-                      setActiveRepoId(id);
-                      setShowUpload(false);
-                    }}
-                  />
-                  {activeRepoId && (
-                    <div className="flex-1 min-w-0">
-                      <ProcessingProgress update={latest} connected={connected} />
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            <div className="space-y-2">
-              {MOCK_REPOS.map((repo, i) => {
-                const cfg = STATUS_CONFIG[repo.status as keyof typeof STATUS_CONFIG];
-                const StatusIcon = cfg.icon;
-                return (
-                  <motion.div
-                    key={repo.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <button onClick={() => navigate(`/repo/${repo.id}`)} className="w-full text-left">
-                      <div className="flex items-center gap-4 bg-[#0d0d14] border border-[#1e1e2e] hover:border-[#2e2e3e] hover:bg-[#12121a] rounded-xl px-5 py-4 transition-all group cursor-pointer">
-                        <div className="w-9 h-9 rounded-xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center flex-shrink-0">
-                          <GitBranch size={15} className="text-indigo-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors">
-                            {repo.name}
-                          </div>
-                          <div className="text-xs text-zinc-500">{repo.language} · {repo.files} files</div>
-                        </div>
-                        <div className={cn('flex items-center gap-1.5 text-xs', cfg.color)}>
-                          <StatusIcon size={13} className={repo.status === 'processing' ? 'animate-spin' : ''} />
-                          {cfg.label}
-                        </div>
-                        <div className="text-xs text-zinc-600 w-24 text-right">{repo.updated}</div>
-                      </div>
-                    </button>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {MOCK_REPOS.length === 0 && (
-              <div className="text-center py-16">
-                <div className="w-12 h-12 rounded-2xl bg-[#12121a] border border-[#1e1e2e] flex items-center justify-center mx-auto mb-3">
-                  <Zap size={20} className="text-zinc-600" />
-                </div>
-                <div className="text-sm font-medium text-zinc-500 mb-1">No repositories yet</div>
-                <div className="text-xs text-zinc-700">Upload a ZIP to get started</div>
-              </div>
-            )}
+    <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
+      {/* Nav */}
+      <nav className="px-8 py-4 flex items-center border-b border-[#1e1e2e]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
+            <Zap size={14} className="text-white" />
           </div>
+          <span className="font-semibold text-white tracking-tight">Helix</span>
         </div>
-      </div>
+        <div className="ml-auto flex items-center gap-3">
+          <Link href="/auth/login">
+            <Button variant="ghost" size="sm">Sign in</Button>
+          </Link>
+          <Link href="/auth/signup">
+            <Button size="sm">Get started</Button>
+          </Link>
+        </div>
+      </nav>
 
-      <AnimatePresence>
-        {pending && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#0a0a0f]/95 backdrop-blur-sm"
-          >
-            <HelixLoader label="Opening repository" sublabel="Loading dependency graph" icon={GitBranch} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Hero */}
+      <main className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center">
+        {/* Glow */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-indigo-600/8 blur-[120px]" />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="relative max-w-3xl"
+        >
+          <div className="inline-flex items-center gap-2 text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-3 py-1.5 mb-6">
+            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" />
+            Now in beta — free for early access
+          </div>
+
+          <h1 className="text-5xl font-bold text-white leading-tight tracking-tight mb-5">
+            Understand any codebase
+            <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
+              in minutes, not months
+            </span>
+          </h1>
+
+          <p className="text-lg text-zinc-500 leading-relaxed mb-8 max-w-xl mx-auto">
+            Upload a repository. Helix builds a live dependency graph, then lets you have a real conversation with your code.
+          </p>
+
+          <div className="flex items-center gap-3 justify-center">
+            <Link href="/auth/signup">
+              <Button size="lg" className="gap-2">
+                Try Helix free <ArrowRight size={15} />
+              </Button>
+            </Link>
+            <Link href="/repo/demo">
+              <Button variant="secondary" size="lg">View demo repo</Button>
+            </Link>
+          </div>
+        </motion.div>
+
+        {/* Features */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="relative mt-20 grid grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl w-full"
+        >
+          {FEATURES.map(({ icon: Icon, title, desc }, i) => (
+            <motion.div
+              key={title}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 + i * 0.07 }}
+              className="text-left bg-[#0d0d14] border border-[#1e1e2e] rounded-xl p-5 hover:border-[#2e2e3e] transition-colors"
+            >
+              <div className="w-8 h-8 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-3">
+                <Icon size={15} className="text-indigo-400" />
+              </div>
+              <div className="text-sm font-semibold text-white mb-1">{title}</div>
+              <div className="text-xs text-zinc-500 leading-relaxed">{desc}</div>
+            </motion.div>
+          ))}
+        </motion.div>
+      </main>
     </div>
   );
 }

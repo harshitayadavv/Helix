@@ -4,8 +4,8 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, GitBranch, MessageSquare, Settings, Zap,
-  ChevronRight, Plus, Network, Search, BarChart2, Zap as Impact,
-  FileText, GitCompare,
+  ChevronRight, Plus, Network, Search, BarChart2,
+  FileText, GitCompare, Clock, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -14,7 +14,9 @@ const nav = [
   { icon: Network, label: 'Graph Explorer', href: '/dashboard/graph', shortcut: '⌘G' },
   { icon: MessageSquare, label: 'AI Chat', href: '/dashboard/chat', shortcut: '⌘A' },
   { icon: BarChart2, label: 'Code Analysis', href: '/dashboard/analysis', shortcut: '⌘N' },
-  { icon: Impact, label: 'Impact Analysis', href: '/dashboard/impact', shortcut: '⌘I' },
+  { icon: Zap, label: 'Impact Analysis', href: '/dashboard/impact', shortcut: '⌘I' },
+  { icon: AlertTriangle, label: 'Performance', href: '/dashboard/performance', shortcut: '⌘E' },
+  { icon: Clock, label: 'Timeline', href: '/dashboard/timeline', shortcut: '⌘T' },
   { icon: Search, label: 'Search', href: '/dashboard/search', shortcut: '⌘F' },
   { icon: FileText, label: 'Documentation', href: '/dashboard/docs', shortcut: '⌘O' },
   { icon: GitCompare, label: 'Compare', href: '/dashboard/compare', shortcut: '⌘P' },

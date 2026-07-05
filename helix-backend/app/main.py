@@ -1,6 +1,5 @@
 """
 Helix backend - FastAPI application entrypoint v0.3.1
-Phases 1-15 all registered here.
 """
 import logging
 import time
@@ -51,6 +50,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Middleware (order matters: last added = first to run) ──────────────────
+# Add timing FIRST so it runs LAST (after CORS)
+@app.middleware("http")
+async def add_start_time(request: Request, call_next):
+    request.state.start_time = time.time()
+    return await call_next(request)
+
+# Add CORS LAST so it runs FIRST (handles preflight before anything else)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -59,16 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.middleware("http")
-async def add_start_time(request: Request, call_next):
-    request.state.start_time = time.time()
-    return await call_next(request)
-
-
-# ---------------------------------------------------------------------------
-# Routers — order matters: more specific prefixes first
-# ---------------------------------------------------------------------------
+# ── Routers ────────────────────────────────────────────────────────────────
 app.include_router(auth.router,        prefix="/api/v1/auth",         tags=["auth"])
 app.include_router(repository.router,  prefix="/api/v1/repositories", tags=["repositories"])
 app.include_router(git.router,         prefix="/api/v1/repositories", tags=["git"])
@@ -93,12 +91,6 @@ async def health_check():
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    """
-    Phase 14 — Enhanced WebSocket.
-    Connect with repo_id as client_id.
-    Client can send: {"subscribe": "<repo_id>"}
-    Server sends: progress | analysis_complete | error | node_added | ping
-    """
     await websocket_manager.connect(client_id, websocket)
     try:
         while True:
