@@ -1,88 +1,154 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Node } from 'reactflow';
-import { motion } from 'framer-motion';
-import { MessageSquare, X } from 'lucide-react';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { TopBar } from '@/components/layout/TopBar';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageSquare, X, Loader2, Network } from 'lucide-react';
 import { DependencyGraph } from '@/components/graph/DependencyGraph';
 import { AIChatPanel } from '@/components/chat/AIChatPanel';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { Badge } from '@/components/ui/badge';
 import { useGraph } from '@/hooks/useGraph';
+import { getRepo, getGraph } from '@/lib/api';
+import { useRepo } from '@/context/RepoContext';
 import { RepoStats } from '@/types';
 
-const DEMO_NODES = [
-  { id: '1', type: 'module' as const, name: 'app', path: 'src/app.py', lines: 120 },
-  { id: '2', type: 'file' as const, name: 'auth.py', path: 'src/auth.py', lines: 340 },
-  { id: '3', type: 'file' as const, name: 'models.py', path: 'src/models.py', lines: 210 },
-  { id: '4', type: 'class' as const, name: 'UserService', path: 'src/services.py', lines: 89 },
-  { id: '5', type: 'class' as const, name: 'AuthHandler', path: 'src/auth.py', lines: 45 },
-  { id: '6', type: 'function' as const, name: 'parse_token', path: 'src/utils.py', lines: 22 },
-  { id: '7', type: 'function' as const, name: 'validate_user', path: 'src/auth.py', lines: 18 },
-  { id: '8', type: 'file' as const, name: 'config.py', path: 'src/config.py', lines: 55 },
-  { id: '9', type: 'module' as const, name: 'database', path: 'src/db/', lines: 400 },
-  { id: '10', type: 'class' as const, name: 'Repository', path: 'src/db/repo.py', lines: 130 },
-  { id: '11', type: 'function' as const, name: 'hash_password', path: 'src/utils.py', lines: 12 },
-  { id: '12', type: 'file' as const, name: 'middleware.py', path: 'src/middleware.py', lines: 78 },
-];
+interface ApiNode {
+  id: string;
+  type: 'file' | 'function' | 'class' | 'module';
+  name: string;
+  file_path?: string;
+  line_count?: number;
+}
 
-const DEMO_EDGES = [
-  { id: 'e1-2', source: '1', target: '2', type: 'import' as const },
-  { id: 'e1-3', source: '1', target: '3', type: 'import' as const },
-  { id: 'e1-9', source: '1', target: '9', type: 'import' as const },
-  { id: 'e2-5', source: '2', target: '5', type: 'inherit' as const },
-  { id: 'e2-6', source: '2', target: '6', type: 'call' as const },
-  { id: 'e3-4', source: '3', target: '4', type: 'use' as const },
-  { id: 'e4-10', source: '4', target: '10', type: 'use' as const },
-  { id: 'e5-7', source: '5', target: '7', type: 'call' as const },
-  { id: 'e5-11', source: '5', target: '11', type: 'call' as const },
-  { id: 'e1-8', source: '1', target: '8', type: 'import' as const },
-  { id: 'e1-12', source: '1', target: '12', type: 'import' as const },
-  { id: 'e9-10', source: '9', target: '10', type: 'use' as const },
-];
+interface ApiEdge {
+  source_id: string;
+  target_id: string;
+  relationship: string;
+}
 
-const DEMO_STATS: RepoStats = {
-  filesCount: 12,
-  functionsCount: 47,
-  classesCount: 8,
-  dependenciesCount: 89,
-  linesOfCode: 3240,
+const EMPTY_STATS: RepoStats = {
+  filesCount: 0,
+  functionsCount: 0,
+  classesCount: 0,
+  dependenciesCount: 0,
+  linesOfCode: 0,
 };
 
 export default function RepoPage({ params }: { params: { id: string } }) {
   const [chatOpen, setChatOpen] = useState(true);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [stats, setStats] = useState<RepoStats>(EMPTY_STATS);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [hasNodes, setHasNodes] = useState(false);
   const { nodes, edges, setNodes, setEdges, loadGraph } = useGraph();
+  const { setSelectedRepo } = useRepo();
 
-  useEffect(() => {
-    loadGraph(DEMO_NODES, DEMO_EDGES);
-  }, [loadGraph]);
+  const loadData = useCallback(async () => {
+    const id = params.id;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleNodeClick = (_: React.MouseEvent, node: Node) => {
-    setSelectedNode(node);
-  };
+    // Load repo stats
+    setStatsLoading(true);
+    getRepo(id)
+      .then(r => {
+        const d = r.data;
+        setStats({
+          filesCount: d.file_count || 0,
+          functionsCount: d.function_count || 0,
+          classesCount: d.class_count || 0,
+          dependenciesCount: d.dependency_count || d.edge_count || 0,
+          linesOfCode: d.line_count || 0,
+        });
+        // Also keep localStorage up to date
+        if (d.name) {
+          setSelectedRepo(id, d.name);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setStatsLoading(false));
+
+    // Load graph
+    setGraphLoading(true);
+    getGraph(id)
+      .then(r => {
+        const apiNodes: ApiNode[] = r.data?.nodes || [];
+        const apiEdges: ApiEdge[] = r.data?.edges || r.data?.relationships || [];
+        setHasNodes(apiNodes.length > 0);
+        if (apiNodes.length > 0) {
+          loadGraph(
+            apiNodes.map(n => ({
+              id: n.id,
+              type: n.type,
+              name: n.name,
+              path: n.file_path,
+              lines: n.line_count,
+            })),
+            apiEdges.map((e, i) => ({
+              id: `e${i}`,
+              source: e.source_id,
+              target: e.target_id,
+              type: e.relationship as 'import' | 'call' | 'inherit' | 'use',
+            }))
+          );
+        }
+      })
+      .catch(() => setHasNodes(false))
+      .finally(() => setGraphLoading(false));
+  }, [params.id, loadGraph, setSelectedRepo]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[
-          { label: 'Repositories', href: '/dashboard' },
-          { label: params.id === 'demo' ? 'helix-backend (demo)' : params.id },
-        ]} />
+    <>
+      {/* Stats strip */}
+      <div className="px-4 pt-4 pb-3 border-b border-[#1e1e2e] flex-shrink-0">
+        {statsLoading ? (
+          <div className="grid grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-20 bg-[#0d0d14] border border-[#1e1e2e] rounded-xl animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <StatsCards stats={stats} />
+        )}
+      </div>
 
-        <div className="px-4 pt-4 pb-3 border-b border-[#1e1e2e] flex-shrink-0">
-          <StatsCards stats={DEMO_STATS} />
-        </div>
+      {/* Main split view */}
+      <div className="flex flex-1 min-h-0">
+        {/* Graph area */}
+        <div className="flex-1 relative min-w-0">
+          {graphLoading ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <Loader2 size={28} className="text-indigo-400 animate-spin" />
+              <div className="text-sm text-zinc-500">Building dependency graph...</div>
+            </div>
+          ) : !hasNodes ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-6">
+              <div className="w-14 h-14 rounded-2xl bg-[#12121a] border border-[#1e1e2e] flex items-center justify-center">
+                <Network size={24} className="text-zinc-700" />
+              </div>
+              <div className="text-sm font-medium text-zinc-500">Graph is being built...</div>
+              <div className="text-xs text-zinc-700 max-w-xs">
+                The repository is still being parsed. This usually takes a few seconds.
+              </div>
+              <button onClick={loadData}
+                className="text-xs text-indigo-400 hover:text-indigo-300 underline transition-colors mt-1">
+                Refresh
+              </button>
+            </div>
+          ) : (
+            <DependencyGraph
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={setNodes}
+              onEdgesChange={setEdges}
+            />
+          )}
 
-        <div className="flex flex-1 min-h-0">
-          <div className="flex-1 relative min-w-0">
-            <DependencyGraph nodes={nodes} edges={edges} onNodesChange={setNodes} onEdgesChange={setEdges} />
-
+          {/* Node detail overlay */}
+          <AnimatePresence>
             {selectedNode && (
-              <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+              <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }}
                 className="absolute top-4 left-4 bg-[#0d0d14] border border-[#1e1e2e] rounded-xl p-4 w-56 shadow-2xl z-10">
                 <div className="flex items-start justify-between mb-3">
                   <Badge variant={selectedNode.data?.nodeType as 'file' | 'function' | 'class' | 'module'}>
@@ -101,24 +167,27 @@ export default function RepoPage({ params }: { params: { id: string } }) {
                 )}
               </motion.div>
             )}
+          </AnimatePresence>
 
-            {!chatOpen && (
-              <button onClick={() => setChatOpen(true)}
-                className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg shadow-lg shadow-indigo-900/30 transition-colors">
-                <MessageSquare size={13} />
-                Ask Helix AI
-              </button>
-            )}
-          </div>
+          {/* Chat toggle */}
+          {!chatOpen && (
+            <button onClick={() => setChatOpen(true)}
+              className="absolute top-4 right-4 z-10 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3 py-2 rounded-lg shadow-lg transition-colors">
+              <MessageSquare size={13} /> Ask Helix AI
+            </button>
+          )}
+        </div>
 
+        {/* Chat panel */}
+        <AnimatePresence>
           {chatOpen && (
             <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 340, opacity: 1 }} exit={{ width: 0, opacity: 0 }}
               className="w-[340px] flex-shrink-0 flex flex-col border-l border-[#1e1e2e]">
               <AIChatPanel repoId={params.id} onClose={() => setChatOpen(false)} />
             </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </div>
-    </div>
+    </>
   );
 }

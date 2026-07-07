@@ -15,34 +15,35 @@ const RepoContext = createContext<RepoContextValue>({
   clearSelectedRepo: () => {},
 });
 
-const STORAGE_KEY = 'helix_selected_repo';
-
 export function RepoProvider({ children }: { children: ReactNode }) {
   const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
   const [selectedRepoName, setSelectedRepoName] = useState<string | null>(null);
 
-  // Hydrate from localStorage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const { id, name } = JSON.parse(stored);
-        setSelectedRepoId(id || null);
-        setSelectedRepoName(name || null);
-      }
+      const id = localStorage.getItem('helix_selected_repo_id');
+      const name = localStorage.getItem('helix_selected_repo_name');
+      if (id) setSelectedRepoId(id);
+      if (name) setSelectedRepoName(name);
     } catch { /* ignore */ }
   }, []);
 
   const setSelectedRepo = useCallback((id: string, name: string) => {
     setSelectedRepoId(id);
     setSelectedRepoName(name);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, name })); } catch { /* ignore */ }
+    try {
+      localStorage.setItem('helix_selected_repo_id', id);
+      localStorage.setItem('helix_selected_repo_name', name);
+    } catch { /* ignore */ }
   }, []);
 
   const clearSelectedRepo = useCallback(() => {
     setSelectedRepoId(null);
     setSelectedRepoName(null);
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    try {
+      localStorage.removeItem('helix_selected_repo_id');
+      localStorage.removeItem('helix_selected_repo_name');
+    } catch { /* ignore */ }
   }, []);
 
   return (
