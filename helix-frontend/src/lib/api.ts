@@ -42,22 +42,19 @@ export const registerUser = (name: string, email: string, password: string) =>
 export const getUsageStats = () => api.get('/auth/usage');
 
 // ─── Repositories ─────────────────────────────────────────
-export const uploadRepo = (file: File, onProgress?: (p: number) => void) => {
+export const uploadRepo = (file: File, onProgress?: (pct: number) => void) => {
   const form = new FormData();
   form.append('file', file);
   return api.post('/repositories/upload', form, {
-    timeout: 300000, // 5 minutes
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (e) => {
-      if (e.total) onProgress?.(Math.round((e.loaded * 100) / e.total));
+      if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
     },
   });
 };
 
-export const cloneRepo = (url: string, branch = 'main') =>
-  api.post('/repositories/clone', { github_url: url, branch }, { 
-    timeout: 300000  // 5 minutes
-  });
+export const cloneRepo = (url: string) =>
+  api.post('/repositories/clone', { url });
 
 export const getRepos = () => api.get('/repositories');
 
@@ -72,6 +69,7 @@ export const getContributors = (id: string) => api.get(`/repositories/${id}/cont
 // ─── Graph ────────────────────────────────────────────────
 export const getGraph = (id: string) => api.get(`/graph/${id}/nodes`);
 export const getGraphNodes = (id: string) => api.get(`/graph/${id}/nodes`);
+export const getRelationships = (id: string) => api.get(`/graph/${id}/relationships`);
 
 // ─── Chat ─────────────────────────────────────────────────
 // Backend returns complete JSON { answer, sources } — not a stream

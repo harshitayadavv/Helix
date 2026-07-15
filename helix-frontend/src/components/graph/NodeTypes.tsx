@@ -3,16 +3,21 @@ import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { FileCode2, Code2, Box, Package } from 'lucide-react';
 
-const NODE_CONFIG = {
-  file: { icon: FileCode2, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.25)' },
-  function: { icon: Code2, color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.25)' },
-  class: { icon: Box, color: '#a855f7', bg: 'rgba(168,85,247,0.08)', border: 'rgba(168,85,247,0.25)' },
-  module: { icon: Package, color: '#f97316', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.25)' },
+const NODE_CONFIG: Record<string, { icon: typeof FileCode2; color: string; bg: string; border: string }> = {
+  file:     { icon: FileCode2, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
+  function: { icon: Code2,     color: '#22c55e', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)' },
+  class:    { icon: Box,       color: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
+  module:   { icon: Package,   color: '#f97316', bg: 'rgba(249,115,22,0.08)',  border: 'rgba(249,115,22,0.25)' },
+  // capitalised variants (backend returns "File", "Function" etc)
+  File:     { icon: FileCode2, color: '#3b82f6', bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.25)' },
+  Function: { icon: Code2,     color: '#22c55e', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)' },
+  Class:    { icon: Box,       color: '#a855f7', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.25)' },
+  Module:   { icon: Package,   color: '#f97316', bg: 'rgba(249,115,22,0.08)',  border: 'rgba(249,115,22,0.25)' },
 };
 
 interface NodeData {
   label: string;
-  nodeType: 'file' | 'function' | 'class' | 'module';
+  nodeType: string;
   path?: string;
   lines?: number;
   color?: string;

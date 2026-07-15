@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, FileCode2, Code2, Box, Package, X, Zap, Route, RefreshCw } from 'lucide-react';
 import { nodeTypes } from '@/components/graph/NodeTypes';
 import { RepoEmptyState } from '@/components/common/RepoEmptyState';
-import { getGraph } from '@/lib/api';
+import { getGraph, getRelationships } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const TYPE_CONFIG = [
@@ -21,7 +21,10 @@ const TYPE_CONFIG = [
 ];
 
 const TYPE_COLOR: Record<string, string> = {
+  // lowercase
   file: '#3b82f6', function: '#22c55e', class: '#a855f7', module: '#f97316',
+  // capitalised (backend may return "File", "Function" etc)
+  File: '#3b82f6', Function: '#22c55e', Class: '#a855f7', Module: '#f97316',
 };
 
 function findShortestPath(edges: Edge[], startId: string, endId: string): string[] {
@@ -60,36 +63,57 @@ function GraphInner({ repoId }: { repoId: string }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    getGraph(repoId)
-      .then(r => {
-        const apiNodes = r.data?.nodes || [];
-        const apiEdges = r.data?.edges || r.data?.relationships || [];
-        const cols = Math.ceil(Math.sqrt(apiNodes.length || 1));
-        const mapped: Node[] = apiNodes.map((n: { id: string; type: string; name: string; file_path?: string; line_count?: number }, i: number) => ({
+    Promise.allSettled([
+      getGraph(repoId),
+      getRelationships(repoId),
+    ]).then(([nodesRes, edgesRes]) => {
+      // ── Nodes ──
+      const apiNodes: {
+        id: string; name: string; type: string;
+        file_path?: string; line_number?: number; language?: string;
+      }[] = nodesRes.status === 'fulfilled'
+        ? (nodesRes.value.data?.nodes || nodesRes.value.data || [])
+        : [];
+
+      const mapped: Node[] = apiNodes.map((n, i) => {
+        // Backend returns type as "File", "Function" etc — normalise to lowercase
+        const nodeType = (n.type || 'file').toLowerCase();
+        return {
           id: n.id,
           type: 'helixNode',
-          position: { x: (i % cols) * 220, y: Math.floor(i / cols) * 140 },
+          position: { x: (i % 6) * 220, y: Math.floor(i / 6) * 160 },
           data: {
-            label: n.name,
-            nodeType: n.type || 'file',
-            path: n.file_path,
-            lines: n.line_count,
-            color: TYPE_COLOR[n.type] || '#6366f1',
+            label:      n.name,
+            nodeType,
+            path:       n.file_path,
+            lines:      n.line_number,
+            color:      TYPE_COLOR[nodeType] || '#6366f1',
           },
-        }));
-        const mappedEdges: Edge[] = apiEdges.map((e: { source_id: string; target_id: string; relationship?: string }, i: number) => ({
-          id: `e${i}`,
-          source: e.source_id,
-          target: e.target_id,
-          type: 'smoothstep',
-          style: { stroke: '#2e2e3e', strokeWidth: 1.5 },
-        }));
-        setNodes(mapped);
-        setEdges(mappedEdges);
-        setBaseEdges(mappedEdges);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+        };
+      });
+
+      // ── Edges / Relationships ──
+      const apiRels: {
+        source_id: string; target_id: string; type?: string; relationship?: string;
+      }[] = edgesRes.status === 'fulfilled'
+        ? (edgesRes.value.data?.relationships || edgesRes.value.data || [])
+        : [];
+
+      const mappedEdges: Edge[] = apiRels.map(r => ({
+        id:       `${r.source_id}-${r.target_id}-${r.type || r.relationship || ''}`,
+        source:   r.source_id,
+        target:   r.target_id,
+        label:    r.type || r.relationship || '',
+        type:     'smoothstep',
+        animated: (r.type || r.relationship) === 'CALLS',
+        style:    { stroke: '#2e2e3e', strokeWidth: 1.5 },
+      }));
+
+      setNodes(mapped);
+      setEdges(mappedEdges);
+      setBaseEdges(mappedEdges);
+    })
+    .finally(() => setLoading(false));
   }, [repoId]);
 
   useEffect(() => { load(); }, [load]);

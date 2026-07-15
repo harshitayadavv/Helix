@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 interface Commit { hash: string; author: string; message: string; timestamp: string; files_changed: number; }
 interface Hotspot { file: string; changes: number; }
-interface Contributor { name: string; commits: number; files_owned: string[]; }
+interface Contributor { name: string; commits: number; files_owned?: string[]; owned_files?: string[]; }
 
 const AVATAR_COLORS = ['bg-indigo-600', 'bg-purple-600', 'bg-blue-600', 'bg-green-600'];
 function initials(name: string) { return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2); }
@@ -110,7 +110,7 @@ export default function TimelinePage({ params }: { params: { id: string } }) {
                           <span className="text-[10px] text-zinc-600">{c.commits} commits</span>
                         </div>
                         <div className="flex flex-wrap gap-1">
-                          {c.files_owned.map(f => (
+                          {(c.files_owned || c.owned_files || []).map(f => (
                             <span key={f} className="text-[9px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded px-1.5 py-0.5">{f}</span>
                           ))}
                         </div>
