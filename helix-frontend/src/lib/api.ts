@@ -46,6 +46,7 @@ export const uploadRepo = (file: File, onProgress?: (pct: number) => void) => {
   const form = new FormData();
   form.append('file', file);
   return api.post('/repositories/upload', form, {
+    timeout: 300000,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (e) => {
       if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
@@ -53,8 +54,11 @@ export const uploadRepo = (file: File, onProgress?: (pct: number) => void) => {
   });
 };
 
-export const cloneRepo = (url: string) =>
-  api.post('/repositories/clone', { url });
+
+export const cloneRepo = (url: string, branch = 'main') =>
+  api.post('/repositories/clone', { github_url: url, branch }, {
+    timeout: 300000
+  });
 
 export const getRepos = () => api.get('/repositories');
 

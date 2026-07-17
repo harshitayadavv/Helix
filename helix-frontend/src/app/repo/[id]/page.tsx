@@ -70,9 +70,25 @@ export default function RepoPage({ params }: { params: { id: string } }) {
     // Load graph
     setGraphLoading(true);
     getGraph(id)
-      .then(r => {
-        const apiNodes: ApiNode[] = r.data?.nodes || [];
-        const apiEdges: ApiEdge[] = r.data?.edges || r.data?.relationships || [];
+  .then(r => {
+    const rawNodes = r.data?.nodes || [];
+    // Unwrap { n: {...}, labels: [...] } format from Neo4j
+    const apiNodes: ApiNode[] = rawNodes.map((item: any) => {
+      if (item.n) {
+        const props = item.n;
+        const label = item.labels?.[0] || 'File';
+        return {
+          id: props.id || props.path || props.name || '',
+          type: label.toLowerCase() as 'file' | 'function' | 'class' | 'module',
+          name: props.name || props.path?.split('\\').pop()?.split('/').pop() || 'unknown',
+          file_path: props.path || props.file_path || '',
+          line_count: props.start_line || props.loc || 0,
+        };
+      }
+      return item;
+    }).filter((n: any) => n.id);
+
+    const apiEdges: ApiEdge[] = r.data?.edges || r.data?.relationships || [];
         setHasNodes(apiNodes.length > 0);
         if (apiNodes.length > 0) {
           loadGraph(
