@@ -26,7 +26,7 @@ class Neo4jClient:
             settings.NEO4J_URI,
             auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
             max_connection_pool_size=settings.NEO4J_MAX_CONNECTION_POOL_SIZE,
-            connection_timeout=settings.NEO4J_CONNECTION_TIMEOUT,
+            connection_timeout=5,
             keep_alive=True,
         )
         await self.verify_connectivity(raise_on_error=True)

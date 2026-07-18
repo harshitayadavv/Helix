@@ -25,10 +25,12 @@ logger = logging.getLogger("helix.main")
 async def lifespan(app: FastAPI):
     logger.info("Starting %s backend v0.3.1 ...", settings.APP_NAME)
     try:
-        await neo4j_client.connect()
+        await asyncio.wait_for(neo4j_client.connect(), timeout=5.0)
         logger.info("Neo4j connection established.")
+    except asyncio.TimeoutError:
+        logger.warning("Neo4j connection timed out on startup — will retry on first request.")
     except Exception:
-        logger.exception("Failed to connect to Neo4j on startup.")
+        logger.exception("Failed to connect to Neo4j on startup. The API will still boot.")
     try:
         await init_db()
         logger.info("PostgreSQL schema ready.")
