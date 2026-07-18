@@ -1,6 +1,7 @@
 """
 Helix backend - FastAPI application entrypoint v0.3.1
 """
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
