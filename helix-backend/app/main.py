@@ -24,6 +24,13 @@ logger = logging.getLogger("helix.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(
+        lambda loop, ctx: logger.error(
+            "Background task crashed: %s",
+            ctx.get("exception", ctx.get("message", "unknown"))
+        )
+    )
     logger.info("Starting %s backend v0.3.1 ...", settings.APP_NAME)
     try:
         await asyncio.wait_for(neo4j_client.connect(), timeout=5.0)
