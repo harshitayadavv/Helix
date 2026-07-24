@@ -85,7 +85,7 @@ export default function TimelinePage() {
     <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Timeline' }]} />
+        <TopBar />
         {!repoLoaded ? (
           <EmptyState description="Upload a repository to see commit history, hotspot files, and contributor activity." />
         ) : (

@@ -90,7 +90,7 @@ export default function ImpactPage() {
     <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Impact Analysis' }]} />
+        <TopBar />
         {!repoLoaded ? (
           <EmptyState description="Upload a repository to analyse what breaks when a file or function is deleted." />
         ) : (

@@ -125,7 +125,7 @@ export default function AnalysisPage() {
     <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Code Analysis' }]} />
+        <TopBar />
         {!repoLoaded ? (
           <EmptyState description="Upload a repository to run health checks, security scans, and code smell detection." />
         ) : (

@@ -120,7 +120,7 @@ export default function DocsPage() {
     <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Documentation' }]} />
+        <TopBar />
         {!repoLoaded ? (
           <EmptyState description="Upload a repository to auto-generate README, API docs, architecture diagrams, and onboarding guides." />
         ) : (

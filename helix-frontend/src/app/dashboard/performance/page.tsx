@@ -103,7 +103,7 @@ export default function PerformancePage() {
     <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar breadcrumbs={[{ label: 'Performance' }]} />
+        <TopBar />
         {!repoLoaded ? (
           <EmptyState description="Upload a repository to detect N+1 queries, blocking async calls, and other performance anti-patterns." />
         ) : (
