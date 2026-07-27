@@ -13,7 +13,7 @@
 [![Groq](https://img.shields.io/badge/Groq-llama--3.3--70b-F55036?style=flat-square)](https://groq.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-[Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start) • [API Docs](#-api-reference) • [Tech Stack](#-tech-stack)
+**[🌐 Live Demo](https://helix-phi-beige.vercel.app)** • **[🔌 API Docs](https://helix-iq1l.onrender.com/docs)** • [Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-quick-start)
 
 </div>
 
@@ -26,6 +26,16 @@ Modern software projects contain thousands of files, APIs, services, and depende
 **Helix transforms any codebase into a queryable knowledge graph.** Upload a ZIP or connect a GitHub repo, and Helix parses every file with tree-sitter AST analysis, builds a Neo4j relationship graph, generates semantic embeddings, and lets you explore and query your code with natural language.
 
 Unlike RAG-based code assistants that search text, **Helix reasons over structure** — function call graphs, class inheritance, module dependencies, and import chains — giving answers that understand *how* your code actually works.
+
+---
+
+## 🔗 Links
+
+| | |
+|---|---|
+| 🌐 **Frontend** | https://helix-phi-beige.vercel.app |
+| 🔌 **Backend API + Swagger** | https://helix-iq1l.onrender.com/docs |
+| 📦 **GitHub** | https://github.com/harshitayadavv/helix |
 
 ---
 
@@ -65,14 +75,12 @@ Unlike RAG-based code assistants that search text, **Helix reasons over structur
 
 ### 🛡️ Security Analyzer
 - Hardcoded secrets detection (API keys, passwords, tokens)
-- SQL injection patterns
-- XSS vulnerabilities
+- SQL injection patterns, XSS vulnerabilities
 - Unsafe imports (`eval`, `exec`, `pickle`, `os.system`)
 - Weak auth patterns (MD5/SHA1 password hashing)
 
 ### 🧩 Code Smell Detection
-- God Classes (>10 methods)
-- Long Methods (>50 lines)
+- God Classes (>10 methods), Long Methods (>50 lines)
 - Circular Dependencies (Neo4j cycle detection)
 - Dead Code (functions with no incoming CALLS edges)
 - Duplicate Logic (same function name across files)
@@ -80,29 +88,22 @@ Unlike RAG-based code assistants that search text, **Helix reasons over structur
 ### 📊 AI Project Health Score
 - Overall score (0–100) with letter grade
 - 6 sub-scores: Architecture · Maintainability · Complexity · Security · Performance · Documentation
-- Aggregates all analysis data into a single dashboard
 
 ### ⚡ Performance Analyzer
-- N+1 query pattern detection
-- Blocking calls in async functions
-- Expensive nested loops
-- Unnecessary object creation in loops
+- N+1 query pattern detection, blocking calls in async functions
+- Expensive nested loops, unnecessary object creation in loops
 
 ### 📖 Documentation Generator
 - AI-generated README, API docs, Architecture overview, Onboarding guide
-- Mermaid diagram for module dependencies
-- Copy or download as `.md`
+- Mermaid diagram for module dependencies — copy or download as `.md`
 
 ### 🔄 Repository Timeline
-- Git log extraction: commits, authors, timestamps, files changed
-- Hotspot files: most frequently changed
-- Contributor graph: who owns which files
+- Git log: commits, authors, timestamps, files changed
+- Hotspot files + contributor graph
 
 ### 🎯 Interactive Graph Explorer
 - React Flow canvas — zoomable, draggable, filterable
-- Custom node types per category (File=blue, Function=green, Class=purple, Module=orange)
-- BFS path tracing between any two nodes
-- Node detail drawer on click
+- BFS path tracing between any two nodes, node detail drawer on click
 
 ---
 
@@ -146,7 +147,7 @@ Unlike RAG-based code assistants that search text, **Helix reasons over structur
 |---|---|
 | **Frontend** | Next.js 14, TypeScript, Tailwind CSS, React Flow, Framer Motion, ShadCN UI |
 | **Backend** | FastAPI, Python 3.11, Celery, Uvicorn |
-| **Graph DB** | Neo4j |
+| **Graph DB** | Neo4j AuraDB |
 | **Relational DB** | PostgreSQL (SQLAlchemy async) |
 | **Cache / Queue** | Redis |
 | **AI Agent** | LangGraph, Groq llama-3.3-70b-versatile |
@@ -154,6 +155,7 @@ Unlike RAG-based code assistants that search text, **Helix reasons over structur
 | **Embeddings** | sentence-transformers (all-MiniLM-L6-v2) |
 | **Vector Search** | FAISS |
 | **Git Analysis** | GitPython |
+| **Hosting** | Vercel (frontend) · Render (backend) |
 | **Infra** | Docker, Docker Compose |
 
 ---
@@ -178,20 +180,18 @@ cd helix
 ```bash
 cd helix-backend
 cp .env.example .env
-# Edit .env and add your GROQ_API_KEY
+# Edit .env — add GROQ_API_KEY and NEO4J credentials
 
-# Start infrastructure
-docker compose up -d neo4j postgres redis
+docker compose up -d neo4j postgres redis   # start infrastructure
 
-# Wait ~15 seconds for Neo4j to boot, then:
 conda create -n helix python=3.11 -y
 conda activate helix
 pip install -r requirements.txt
 
-# Terminal 1 — API server
+# Terminal 1
 uvicorn app.main:app --reload --port 8001
 
-# Terminal 2 — Celery worker
+# Terminal 2
 celery -A celery_worker.celery_app worker --loglevel=info --pool=solo
 ```
 
@@ -200,8 +200,8 @@ celery -A celery_worker.celery_app worker --loglevel=info --pool=solo
 ```bash
 cd helix-frontend
 cp .env.local.example .env.local
-npm install
-npm run dev
+# Set NEXT_PUBLIC_API_URL=http://localhost:8001
+npm install && npm run dev
 ```
 
 ### 4. Open Helix
@@ -219,24 +219,24 @@ npm run dev
 All endpoints require `X-API-Key` header after registration.
 
 ```bash
-# Register and get your API key
-curl -X POST http://localhost:8001/api/v1/auth/register \
+# Register
+curl -X POST https://helix-iq1l.onrender.com/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com", "password": "yourpass", "name": "Your Name"}'
 
 # Upload a repository
-curl -X POST http://localhost:8001/api/v1/repositories/upload \
+curl -X POST https://helix-iq1l.onrender.com/api/v1/repositories/upload \
   -H "X-API-Key: your_key" \
   -F "file=@myrepo.zip"
 
-# Ask the AI a question
-curl -X POST http://localhost:8001/api/v1/ai/ask \
+# Ask the AI
+curl -X POST https://helix-iq1l.onrender.com/api/v1/ai/ask \
   -H "X-API-Key: your_key" \
   -H "Content-Type: application/json" \
   -d '{"repo_id": "your_repo_id", "question": "Explain the authentication flow"}'
 ```
 
-Full API documentation available at `/docs` (Swagger UI) when the backend is running.
+Full docs: **https://helix-iq1l.onrender.com/docs**
 
 ---
 
@@ -246,32 +246,27 @@ Full API documentation available at `/docs` (Swagger UI) when the backend is run
 helix/
 ├── helix-backend/
 │   ├── app/
-│   │   ├── api/routes/          # FastAPI route handlers
+│   │   ├── api/routes/       # FastAPI route handlers
 │   │   ├── core/
-│   │   │   ├── ai/              # LangGraph agent, embeddings, prompts
-│   │   │   ├── analysis/        # Security, smells, health, performance, impact
-│   │   │   ├── comparison/      # Repo comparator
-│   │   │   ├── docs/            # Documentation generator
-│   │   │   ├── git/             # Git analyzer (GitPython)
-│   │   │   ├── graph/           # Neo4j client, graph builder, dependency resolver
-│   │   │   ├── parser/          # tree-sitter AST parser, language detector
-│   │   │   └── search/          # Hybrid FAISS + Neo4j search
-│   │   ├── db/                  # PostgreSQL + SQLAlchemy
-│   │   ├── models/              # Pydantic + ORM models
-│   │   └── services/            # Repo processor, Celery tasks, WebSocket manager
-│   ├── docker-compose.yml
-│   └── requirements.txt
+│   │   │   ├── ai/           # LangGraph agent, embeddings, prompts
+│   │   │   ├── analysis/     # Security, smells, health, performance, impact
+│   │   │   ├── docs/         # Documentation generator
+│   │   │   ├── git/          # Git analyzer (GitPython)
+│   │   │   ├── graph/        # Neo4j client, graph builder
+│   │   │   ├── parser/       # tree-sitter AST parser
+│   │   │   └── search/       # Hybrid FAISS + Neo4j search
+│   │   ├── db/               # PostgreSQL + SQLAlchemy
+│   │   └── services/         # Repo processor, Celery, WebSocket
+│   └── docker-compose.yml
 │
 └── helix-frontend/
     └── src/
-        ├── app/                 # Next.js 14 app router pages
-        │   ├── dashboard/       # graph, chat, analysis, impact, search,
-        │   │   │                  docs, compare, settings, timeline, performance
-        │   ├── repo/[id]/       # Repo detail view
-        │   └── auth/            # Login + signup
-        ├── components/          # 20+ reusable components
-        ├── hooks/               # useWebSocket, useGraph, useChat
-        └── lib/                 # api.ts, websocket.ts, utils.ts
+        ├── app/
+        │   ├── repo/[id]/    # Per-repo workspace
+        │   ├── dashboard/    # Repo list + uploader
+        │   └── auth/         # Login + signup
+        ├── components/       # 20+ reusable components
+        └── lib/              # api.ts, websocket.ts, utils.ts
 ```
 
 ---
@@ -280,10 +275,10 @@ helix/
 
 - [ ] Multi-agent architecture reviewer
 - [ ] PR review assistant
-- [ ] AI Change Simulator (predict consequences of refactoring)
-- [ ] Voice interaction
+- [ ] AI Change Simulator
 - [ ] VS Code extension
-- [ ] Team Knowledge Hub (shared query history)
+- [ ] Voice interaction
+- [ ] Team Knowledge Hub
 
 ---
 
