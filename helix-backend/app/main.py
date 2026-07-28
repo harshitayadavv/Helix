@@ -70,13 +70,11 @@ async def add_start_time(request: Request, call_next):
 # Add CORS LAST so it runs FIRST (handles preflight before anything else)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
-
 # ── Routers ────────────────────────────────────────────────────────────────
 app.include_router(auth.router,        prefix="/api/v1/auth",         tags=["auth"])
 app.include_router(repository.router,  prefix="/api/v1/repositories", tags=["repositories"])
