@@ -34,15 +34,18 @@ const STATUS_CONFIG = {
 
 function formatRelative(dateStr: string): string {
   try {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins  = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days  = Math.floor(diff / 86400000);
-    if (mins  <  1) return 'Just now';
+    // Backend returns UTC timestamps — append Z if missing so
+    // the browser parses them as UTC instead of local time
+    const utcStr = dateStr.endsWith('Z') ? dateStr : dateStr + 'Z';
+    const diff   = Date.now() - new Date(utcStr).getTime();
+    const mins   = Math.floor(diff / 60000);
+    if (mins  <  1) return 'just now';
     if (mins  < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
     if (hours < 24) return `${hours}h ago`;
+    const days  = Math.floor(hours / 24);
     if (days  <  7) return `${days}d ago`;
-    return new Date(dateStr).toLocaleDateString();
+    return new Date(utcStr).toLocaleDateString();
   } catch { return ''; }
 }
 
