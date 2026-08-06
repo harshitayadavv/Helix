@@ -34,6 +34,7 @@ async def _run_ingestion(repo_id: str, zip_path: str) -> None:
             for pf in parsed_files
         )
         class_count = sum(len(pf.classes) for pf in parsed_files)
+        dependency_count = sum(len(pf.imports) for pf in parsed_files)
 
         async with AsyncSessionLocal() as db:
             await db.execute(
@@ -44,10 +45,11 @@ async def _run_ingestion(repo_id: str, zip_path: str) -> None:
                     file_count=len(parsed_files),
                     function_count=function_count,
                     class_count=class_count,
+                    dependency_count=dependency_count,
                 )
             )
             await db.commit()
-
+            
         logger.info("Ingestion complete for repo %s", repo_id)
 
     except Exception as exc:

@@ -8,7 +8,7 @@ import { AIChatPanel } from '@/components/chat/AIChatPanel';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { Badge } from '@/components/ui/badge';
 import { useGraph } from '@/hooks/useGraph';
-import { getRepo, getGraph } from '@/lib/api';
+import { getRepo, getGraph, getRelationships } from '@/lib/api';
 import { useRepo } from '@/context/RepoContext';
 import { RepoStats } from '@/types';
 
@@ -23,7 +23,7 @@ interface ApiNode {
 interface ApiEdge {
   source_id: string;
   target_id: string;
-  relationship: string;
+  type: string;
 }
 
 const EMPTY_STATS: RepoStats = {
@@ -47,48 +47,58 @@ export default function RepoPage({ params }: { params: { id: string } }) {
   const loadData = useCallback(async () => {
     const id = params.id;
 
-    // Load repo stats
+    // Poll status until ingestion finishes — stats are 0 until the
+    // background task commits, so a single fetch on mount can catch
+    // the repo mid-processing and never update.
     setStatsLoading(true);
-    getRepo(id)
-      .then(r => {
-        const d = r.data;
-        setStats({
-          filesCount: d.file_count || 0,
-          functionsCount: d.function_count || 0,
-          classesCount: d.class_count || 0,
-          dependenciesCount: d.dependency_count || d.edge_count || 0,
-          linesOfCode: d.line_count || 0,
-        });
-        // Also keep localStorage up to date
-        if (d.name) {
-          setSelectedRepo(id, d.name);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setStatsLoading(false));
+    let attempts = 0;
+    const pollStats = () => {
+      getRepo(id)
+        .then(r => {
+          const d = r.data;
+          setStats({
+            filesCount: d.file_count || 0,
+            functionsCount: d.function_count || 0,
+            classesCount: d.class_count || 0,
+            dependenciesCount: d.dependency_count || 0,
+            linesOfCode: d.line_count || 0,
+          });
+          if (d.name) setSelectedRepo(id, d.name);
+
+          const done = d.status === 'completed' || d.status === 'failed';
+          if (!done && attempts < 20) {
+            attempts += 1;
+            setTimeout(pollStats, 3000);
+          } else {
+            setStatsLoading(false);
+          }
+        })
+        .catch(() => setStatsLoading(false));
+    };
+    pollStats();
 
     // Load graph
     setGraphLoading(true);
-    getGraph(id)
-  .then(r => {
-    const rawNodes = r.data?.nodes || [];
-    // Unwrap { n: {...}, labels: [...] } format from Neo4j
-    const apiNodes: ApiNode[] = rawNodes.map((item: any) => {
-      if (item.n) {
-        const props = item.n;
-        const label = item.labels?.[0] || 'File';
-        return {
-          id: props.id || props.path || props.name || '',
-          type: label.toLowerCase() as 'file' | 'function' | 'class' | 'module',
-          name: props.name || props.path?.split('\\').pop()?.split('/').pop() || 'unknown',
-          file_path: props.path || props.file_path || '',
-          line_count: props.start_line || props.loc || 0,
-        };
-      }
-      return item;
-    }).filter((n: any) => n.id);
+    Promise.all([getGraph(id), getRelationships(id)])
+      .then(([nodesRes, relsRes]) => {
+        const rawNodes = nodesRes.data?.nodes || [];
+        // Unwrap { n: {...}, labels: [...] } format from Neo4j
+        const apiNodes: ApiNode[] = rawNodes.map((item: any) => {
+          if (item.n) {
+            const props = item.n;
+            const label = item.labels?.[0] || 'File';
+            return {
+              id: props.id || props.path || props.name || '',
+              type: label.toLowerCase() as 'file' | 'function' | 'class' | 'module',
+              name: props.name || props.path?.split('\\').pop()?.split('/').pop() || 'unknown',
+              file_path: props.path || props.file_path || '',
+              line_count: props.start_line || props.loc || 0,
+            };
+          }
+          return item;
+        }).filter((n: any) => n.id);
 
-    const apiEdges: ApiEdge[] = r.data?.edges || r.data?.relationships || [];
+        const apiEdges: ApiEdge[] = relsRes.data?.relationships || [];
         setHasNodes(apiNodes.length > 0);
         if (apiNodes.length > 0) {
           loadGraph(
@@ -103,7 +113,7 @@ export default function RepoPage({ params }: { params: { id: string } }) {
               id: `e${i}`,
               source: e.source_id,
               target: e.target_id,
-              type: e.relationship as 'import' | 'call' | 'inherit' | 'use',
+              type: e.type as 'import' | 'call' | 'inherit' | 'use',
             }))
           );
         }

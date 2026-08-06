@@ -37,7 +37,9 @@ async def get_relationships(repo_id: str, rel_type: Optional[str] = Query(defaul
     query = f"""
     MATCH (a)-[r{rel_filter}]->(b)
     WHERE a.repo_id = $repo_id
-    RETURN a.id AS source, type(r) AS type, b.id AS target
+    RETURN coalesce(a.id, a.path, a.name) AS source_id,
+           type(r) AS type,
+           coalesce(b.id, b.path, b.name) AS target_id
     LIMIT $limit
     """
     try:

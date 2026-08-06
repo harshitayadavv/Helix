@@ -67,10 +67,11 @@ class RepositoryModel(Base):
     source_type    = Column(String(32), nullable=False, default="upload")
     source_url     = Column(String(1024), nullable=True)
     storage_path   = Column(String(1024), nullable=True)
-    file_count     = Column(Integer, default=0)
-    function_count = Column(Integer, default=0)
-    class_count    = Column(Integer, default=0)
-    error_message  = Column(Text, nullable=True)
+    file_count       = Column(Integer, default=0)
+    function_count   = Column(Integer, default=0)
+    class_count      = Column(Integer, default=0)
+    dependency_count = Column(Integer, default=0)
+    error_message    = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(

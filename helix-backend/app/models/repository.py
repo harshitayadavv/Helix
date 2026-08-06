@@ -35,6 +35,7 @@ class RepositoryOut(BaseModel):
     file_count: int = 0
     function_count: int = 0
     class_count: int = 0
+    dependency_count: int = 0
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
