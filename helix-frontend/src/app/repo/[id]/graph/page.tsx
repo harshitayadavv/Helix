@@ -25,6 +25,14 @@ const TYPE_COLOR: Record<string, string> = {
   File: '#3b82f6',     Function: '#22c55e', Class: '#a855f7',  Module: '#f97316',
 };
 
+const REL_CONFIG = [
+  { key: 'CONTAINS', label: 'Contains', color: '#64748b' },
+  { key: 'CALLS',    label: 'Calls',    color: '#22c55e' },
+  { key: 'IMPORTS',  label: 'Imports',  color: '#f97316' },
+  { key: 'INHERITS', label: 'Inherits', color: '#a855f7' },
+];
+const REL_COLOR: Record<string, string> = Object.fromEntries(REL_CONFIG.map(r => [r.key, r.color]));
+
 function findShortestPath(edges: Edge[], startId: string, endId: string): string[] {
   const graph: Record<string, string[]> = {};
   edges.forEach(e => {
@@ -52,6 +60,7 @@ function GraphInner({ repoId }: { repoId: string }) {
   const [baseEdges, setBaseEdges]   = useState<Edge[]>([]);
   const [search, setSearch]         = useState('');
   const [activeFilters, setActiveFilters] = useState(['file', 'function', 'class', 'module', 'File', 'Function', 'Class', 'Module']);
+  const [activeRelFilters, setActiveRelFilters] = useState(['CONTAINS', 'CALLS', 'IMPORTS', 'INHERITS']);
   const [selectedNode, setSelectedNode]   = useState<Node | null>(null);
   const [traceMode, setTraceMode]   = useState(false);
   const [traceNodes, setTraceNodes] = useState<string[]>([]);
@@ -113,15 +122,18 @@ const mapped: Node[] = apiNodes.map((node: any, index: number) => {
         ? (edgesRes.value.data?.relationships || edgesRes.value.data || [])
         : [];
 
-      const mappedEdges: Edge[] = apiRels.map(r => ({
-        id:       `${r.source_id}-${r.target_id}-${r.type || r.relationship || ''}`,
-        source:   r.source_id,
-        target:   r.target_id,
-        label:    r.type || r.relationship || '',
-        type:     'smoothstep',
-        animated: (r.type || r.relationship) === 'CALLS',
-        style:    { stroke: '#2e2e3e', strokeWidth: 1.5 },
-      }));
+      const mappedEdges: Edge[] = apiRels.map(r => {
+        const relType = r.type || r.relationship || '';
+        return {
+          id:       `${r.source_id}-${r.target_id}-${relType}`,
+          source:   r.source_id,
+          target:   r.target_id,
+          label:    relType,
+          type:     'smoothstep',
+          animated: relType === 'CALLS',
+          style:    { stroke: REL_COLOR[relType] || '#2e2e3e', strokeWidth: 1.5 },
+        };
+      });
 
       setNodes(mapped);
       setEdges(mappedEdges);
@@ -134,6 +146,13 @@ const mapped: Node[] = apiNodes.map((node: any, index: number) => {
   const filtered = nodes.filter(n =>
     activeFilters.some(f => f.toLowerCase() === (n.data.nodeType || '').toLowerCase()) &&
     (!search || n.data.label.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const visibleNodeIds = new Set(filtered.map(n => n.id));
+  const visibleEdges = edges.filter(e =>
+    activeRelFilters.includes((e.label as string) || '') &&
+    visibleNodeIds.has(e.source) &&
+    visibleNodeIds.has(e.target)
   );
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -204,6 +223,26 @@ const mapped: Node[] = apiNodes.map((node: any, index: number) => {
             );
           })}
         </div>
+        {/* Edge legend / filter */}
+        <div className="p-3 border-b border-[#1e1e2e]">
+          <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Edges</div>
+          {REL_CONFIG.map(({ key, label, color }) => {
+            const count  = baseEdges.filter(e => e.label === key).length;
+            const active = activeRelFilters.includes(key);
+            return (
+              <button key={key}
+                onClick={() => setActiveRelFilters(prev =>
+                  active ? prev.filter(f => f !== key) : [...prev, key]
+                )}
+                className={cn('w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors',
+                  active ? 'text-zinc-300' : 'text-zinc-600 hover:text-zinc-400')}>
+                <div className="w-4 h-[2px] flex-shrink-0 rounded" style={{ background: active ? color : '#2e2e3e' }} />
+                {label}
+                <span className="ml-auto text-zinc-700">{count}</span>
+              </button>
+            );
+          })}
+        </div>
 
         {/* Node list */}
         <div className="flex-1 overflow-y-auto p-2">
@@ -262,7 +301,7 @@ const mapped: Node[] = apiNodes.map((node: any, index: number) => {
             <div style={{ width: '100%', height: 'calc(100vh - 168px)' }}>
               <ReactFlow
                 nodes={filtered}
-                edges={edges}
+                edges={visibleEdges}
                 nodeTypes={nodeTypes}
                 onNodesChange={(changes: NodeChange[]) => setNodes(n => applyNodeChanges(changes, n))}
                 onEdgesChange={(changes: EdgeChange[]) => setEdges(e => applyEdgeChanges(changes, e))}
