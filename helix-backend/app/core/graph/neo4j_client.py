@@ -53,8 +53,9 @@ class Neo4jClient:
             return False
 
     def session(self, database: Optional[str] = None) -> AsyncSession:
-        return self.driver.session(database=database or settings.NEO4J_DATABASE)
-
+        db = database or settings.NEO4J_DATABASE or None
+        return self.driver.session(database=db if db else None)
+    
     async def execute_read(
         self,
         query: str,
