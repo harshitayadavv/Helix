@@ -8,10 +8,40 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, FileCode2, Code2, Box, Package, X, Zap, Route, RefreshCw } from 'lucide-react';
+import dagre from 'dagre';
 import { nodeTypes } from '@/components/graph/NodeTypes';
 import { RepoEmptyState } from '@/components/common/RepoEmptyState';
 import { getGraph, getRelationships } from '@/lib/api';
 import { cn } from '@/lib/utils';
+
+const NODE_W = 190;
+const NODE_H = 64;
+
+/**
+ * Lays out nodes using only the hierarchy-defining edges (CONTAINS),
+ * so File > Class > Function reads like a tree. Other edge types
+ * (CALLS, IMPORTS, INHERITS) are drawn afterwards on top of these
+ * stable positions instead of influencing layout, which is what
+ * causes the tangled/crisscrossing look.
+ */
+function layoutGraph(nodes: Node[], hierarchyEdges: Edge[]): Node[] {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 90 });
+
+  nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
+  hierarchyEdges.forEach(e => g.setEdge(e.source, e.target));
+
+  dagre.layout(g);
+
+  return nodes.map(n => {
+    const pos = g.node(n.id);
+    // Nodes with no CONTAINS edge (e.g. isolated modules) won't get
+    // a dagre position — fall back to a simple offset grid for those.
+    if (!pos) return n;
+    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } };
+  });
+}
 
 const TYPE_CONFIG = [
   { key: 'file',     label: 'Files',     icon: FileCode2, color: '#3b82f6' },
@@ -60,7 +90,7 @@ function GraphInner({ repoId }: { repoId: string }) {
   const [baseEdges, setBaseEdges]   = useState<Edge[]>([]);
   const [search, setSearch]         = useState('');
   const [activeFilters, setActiveFilters] = useState(['file', 'function', 'class', 'module', 'File', 'Function', 'Class', 'Module']);
-  const [activeRelFilters, setActiveRelFilters] = useState(['CONTAINS', 'CALLS', 'IMPORTS', 'INHERITS']);
+  const [activeRelFilters, setActiveRelFilters] = useState(['CALLS', 'IMPORTS', 'INHERITS']);
   const [selectedNode, setSelectedNode]   = useState<Node | null>(null);
   const [traceMode, setTraceMode]   = useState(false);
   const [traceNodes, setTraceNodes] = useState<string[]>([]);
@@ -97,15 +127,12 @@ const apiNodes = rawData.map((item: any) => {
   return item;
 });
 
-const mapped: Node[] = apiNodes.map((node: any, index: number) => {
+const unpositioned: Node[] = apiNodes.map((node: any) => {
   const nodeType = node.type || 'File';
   return {
     id: node.id,
     type: 'helixNode',
-    position: {
-      x: (index % 8) * 200,
-      y: Math.floor(index / 8) * 150,
-    },
+    position: { x: 0, y: 0 }, // placeholder — dagre fills this in below
     data: {
       label: node.name,
       nodeType,
@@ -134,6 +161,9 @@ const mapped: Node[] = apiNodes.map((node: any, index: number) => {
           style:    { stroke: REL_COLOR[relType] || '#2e2e3e', strokeWidth: 1.5 },
         };
       });
+
+      const hierarchyEdges = mappedEdges.filter(e => e.label === 'CONTAINS');
+      const mapped = layoutGraph(unpositioned, hierarchyEdges);
 
       setNodes(mapped);
       setEdges(mappedEdges);
