@@ -291,5 +291,5 @@ Built by **Harshita Yadav** — B.Tech, IIIT Kota
 ---
 
 <div align="center">
-<sub>Built with ❤️ — Helix is not just a project. It's a platform.</sub>
+<sub>Built with ❤️ by Harshita — Helix is not just a project. It's a platform.</sub>
 </div>
