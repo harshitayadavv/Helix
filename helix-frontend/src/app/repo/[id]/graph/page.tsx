@@ -25,22 +25,45 @@ const NODE_H = 64;
  * causes the tangled/crisscrossing look.
  */
 function layoutGraph(nodes: Node[], hierarchyEdges: Edge[]): Node[] {
+  // Nodes that never appear in a CONTAINS edge (typically external
+  // Module nodes) have no parent/child relationship to lay out at
+  // all. Feeding them into dagre alongside the real tree puts them
+  // all on rank 0 next to the tree root, which reads as one long
+  // horizontal strip. Instead, lay out only the connected tree with
+  // dagre, then place the disconnected nodes in their own grid
+  // cluster underneath it.
+  const participantIds = new Set<string>();
+  hierarchyEdges.forEach(e => { participantIds.add(e.source); participantIds.add(e.target); });
+
+  const treeNodes = nodes.filter(n => participantIds.has(n.id));
+  const isolatedNodes = nodes.filter(n => !participantIds.has(n.id));
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 90 });
-
-  nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
+  treeNodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
   hierarchyEdges.forEach(e => g.setEdge(e.source, e.target));
-
   dagre.layout(g);
 
-  return nodes.map(n => {
+  let maxY = 0;
+  const positionedTree = treeNodes.map(n => {
     const pos = g.node(n.id);
-    // Nodes with no CONTAINS edge (e.g. isolated modules) won't get
-    // a dagre position — fall back to a simple offset grid for those.
     if (!pos) return n;
+    maxY = Math.max(maxY, pos.y);
     return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } };
   });
+
+  const isolatedY = maxY + NODE_H + 140;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(isolatedNodes.length)));
+  const positionedIsolated = isolatedNodes.map((n, i) => ({
+    ...n,
+    position: {
+      x: (i % cols) * (NODE_W + 40),
+      y: isolatedY + Math.floor(i / cols) * (NODE_H + 40),
+    },
+  }));
+
+  return [...positionedTree, ...positionedIsolated];
 }
 
 const TYPE_CONFIG = [
@@ -170,7 +193,9 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
           // path midpoint regardless of whether either endpoint is in
           // view, which looks like a floating label attached to
           // nothing. Color (from the legend) carries the type instead;
-          // the label still appears on hover, added below.
+          // the label still appears on hover, added below. relType is
+          // kept in `data` (not `label`) so counting/filtering/layout
+          // logic below still has something stable to read.
           type:     'smoothstep',
           animated: relType === 'CALLS',
           style:    { stroke: REL_COLOR[relType] || '#2e2e3e', strokeWidth: 1.5 },
@@ -178,7 +203,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
         };
       });
 
-      const hierarchyEdges = mappedEdges.filter(e => e.label === 'CONTAINS');
+      const hierarchyEdges = mappedEdges.filter(e => (e.data as any)?.relType === 'CONTAINS');
       const mapped = layoutGraph(unpositioned, hierarchyEdges);
 
       setNodes(mapped);
@@ -196,7 +221,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
 
   const visibleNodeIds = new Set(filtered.map(n => n.id));
   const visibleEdges = edges.filter(e =>
-    activeRelFilters.includes((e.label as string) || '') &&
+    activeRelFilters.includes((e.data as any)?.relType || '') &&
     visibleNodeIds.has(e.source) &&
     visibleNodeIds.has(e.target)
   );
@@ -273,7 +298,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
         <div className="p-3 border-b border-[#1e1e2e]">
           <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Edges</div>
           {REL_CONFIG.map(({ key, label, color }) => {
-            const count  = baseEdges.filter(e => e.label === key).length;
+            const count  = baseEdges.filter(e => (e.data as any)?.relType === key).length;
             const active = activeRelFilters.includes(key);
             return (
               <button key={key}
