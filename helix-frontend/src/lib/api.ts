@@ -74,6 +74,7 @@ export const getContributors = (id: string) => api.get(`/repositories/${id}/cont
 export const getGraph = (id: string) => api.get(`/graph/${id}/nodes`);
 export const getGraphNodes = (id: string) => api.get(`/graph/${id}/nodes`);
 export const getRelationships = (id: string) => api.get(`/graph/${id}/relationships`);
+export const getGraphStats = (id: string) => api.get(`/graph/${id}/stats`);
 
 // ─── Chat ─────────────────────────────────────────────────
 // Backend returns complete JSON { answer, sources } — not a stream

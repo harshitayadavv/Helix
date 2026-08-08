@@ -8,7 +8,7 @@ import { AIChatPanel } from '@/components/chat/AIChatPanel';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { Badge } from '@/components/ui/badge';
 import { useGraph } from '@/hooks/useGraph';
-import { getRepo, getGraph, getRelationships } from '@/lib/api';
+import { getRepo, getGraph, getRelationships, getGraphStats } from '@/lib/api';
 import { useRepo } from '@/context/RepoContext';
 import { RepoStats } from '@/types';
 
@@ -47,25 +47,33 @@ export default function RepoPage({ params }: { params: { id: string } }) {
   const loadData = useCallback(async () => {
     const id = params.id;
 
-    // Poll status until ingestion finishes — stats are 0 until the
-    // background task commits, so a single fetch on mount can catch
-    // the repo mid-processing and never update.
+    // Poll until either Postgres reports completed/failed OR the graph
+    // already has nodes in it — the graph finishes well before the
+    // (slower, best-effort) embeddings step that Postgres waits on, so
+    // this lets stats appear as soon as real data actually exists
+    // instead of waiting on a status field that can lag behind.
     setStatsLoading(true);
     let attempts = 0;
     const pollStats = () => {
-      getRepo(id)
-        .then(r => {
-          const d = r.data;
-          setStats({
-            filesCount: d.file_count || 0,
-            functionsCount: d.function_count || 0,
-            classesCount: d.class_count || 0,
-            dependenciesCount: d.dependency_count || 0,
-            linesOfCode: d.line_count || 0,
-          });
+      Promise.all([getRepo(id), getGraphStats(id).catch(() => null)])
+        .then(([repoRes, statsRes]) => {
+          const d = repoRes.data;
           if (d.name) setSelectedRepo(id, d.name);
 
-          const done = d.status === 'completed' || d.status === 'failed';
+          const g = statsRes?.data;
+          const graphHasData = !!g && g.file_count > 0;
+
+          if (graphHasData) {
+            setStats({
+              filesCount: g.file_count || 0,
+              functionsCount: g.function_count || 0,
+              classesCount: g.class_count || 0,
+              dependenciesCount: g.dependency_count || 0,
+              linesOfCode: d.line_count || 0,
+            });
+          }
+
+          const done = d.status === 'completed' || d.status === 'failed' || graphHasData;
           if (!done && attempts < 20) {
             attempts += 1;
             setTimeout(pollStats, 3000);

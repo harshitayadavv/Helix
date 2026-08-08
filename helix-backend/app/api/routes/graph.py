@@ -49,6 +49,35 @@ async def get_relationships(repo_id: str, rel_type: Optional[str] = Query(defaul
         raise HTTPException(status_code=500, detail="Failed to query the graph.")
     return {"count": len(rows), "relationships": rows}
 
+@router.get("/{repo_id}/stats")
+async def get_graph_stats(repo_id: str):
+    node_query = """
+    MATCH (n)
+    WHERE n.repo_id = $repo_id
+    RETURN labels(n)[0] AS label, count(n) AS count
+    """
+    edge_query = """
+    MATCH (a)-[r:IMPORTS]->(b)
+    WHERE a.repo_id = $repo_id
+    RETURN count(r) AS count
+    """
+    try:
+        node_rows = await neo4j_client.execute_read(node_query, {"repo_id": repo_id})
+        edge_rows = await neo4j_client.execute_read(edge_query, {"repo_id": repo_id})
+    except Exception:
+        logger.exception("Failed fetching graph stats for repo %s", repo_id)
+        raise HTTPException(status_code=500, detail="Failed to query the graph.")
+
+    counts = {row["label"]: row["count"] for row in node_rows if row["label"]}
+    dependency_count = edge_rows[0]["count"] if edge_rows else 0
+
+    return {
+        "file_count": counts.get("File", 0),
+        "function_count": counts.get("Function", 0),
+        "class_count": counts.get("Class", 0),
+        "module_count": counts.get("Module", 0),
+        "dependency_count": dependency_count,
+    }
 
 @router.get("/{repo_id}/file")
 async def get_file_dependencies(repo_id: str, path: str = Query(...)):

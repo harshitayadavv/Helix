@@ -11,6 +11,7 @@ Orchestrates the full repository ingestion pipeline:
 Progress is streamed to the frontend via the WebSocket manager at
 every stage so a UI can render a live progress bar.
 """
+import asyncio
 import logging
 import os
 import shutil
@@ -46,7 +47,22 @@ class RepoProcessor:
             extract_dir = await self._extract_zip(zip_path)
             parsed_files = await self._parse_repository(extract_dir)
             await self._build_graph(parsed_files)
-            await self._generate_embeddings(parsed_files)
+
+            # Embeddings (sentence-transformers) are the slowest, most
+            # memory-hungry step and aren't required for the graph/chat
+            # experience. On constrained hosts this can hang or OOM,
+            # which previously meant nothing after it ever ran — leaving
+            # the repo's Postgres status stuck at "pending" forever.
+            # It's now bounded and best-effort: a failure here no longer
+            # blocks the repo from being marked COMPLETED.
+            try:
+                await asyncio.wait_for(self._generate_embeddings(parsed_files), timeout=120.0)
+            except asyncio.TimeoutError:
+                logger.warning("Embedding generation timed out for repo %s; continuing without it.", self.repo_id)
+                await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings timed out, skipping.")
+            except Exception:
+                logger.exception("Embedding generation failed for repo %s; continuing without it.", self.repo_id)
+                await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings failed, skipping.")
 
             await websocket_manager.send_progress(self.repo_id, RepoStatus.COMPLETED.value, 100.0, "Processing complete.")
             return parsed_files
