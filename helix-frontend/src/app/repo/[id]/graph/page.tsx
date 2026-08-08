@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactFlow, {
   Background, BackgroundVariant, MiniMap, Controls, ReactFlowProvider,
   Node, Edge, NodeChange, EdgeChange, applyNodeChanges, applyEdgeChanges,
@@ -7,8 +7,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, FileCode2, Code2, Box, Package, X, Zap, Route, RefreshCw } from 'lucide-react';
-import dagre from 'dagre';
+import { Search, FileCode2, Code2, Box, Package, X, Zap, Route, RefreshCw, Monitor, Server } from 'lucide-react';
 import { nodeTypes } from '@/components/graph/NodeTypes';
 import { RepoEmptyState } from '@/components/common/RepoEmptyState';
 import { getGraph, getRelationships } from '@/lib/api';
@@ -17,53 +16,128 @@ import { cn } from '@/lib/utils';
 const NODE_W = 190;
 const NODE_H = 64;
 
+// Common entry-point filenames, checked in priority order when picking
+// the center of the mind map.
+const ROOT_NAME_CANDIDATES = [
+  'main.py', 'app.py', 'main.js', 'app.js', 'index.js', 'index.ts',
+  'app.jsx', 'app.tsx', 'main.go', 'main.rb', 'main.java', 'program.cs',
+];
+
+type Side = 'frontend' | 'backend';
+
 /**
- * Lays out nodes using only the hierarchy-defining edges (CONTAINS),
- * so File > Class > Function reads like a tree. Other edge types
- * (CALLS, IMPORTS, INHERITS) are drawn afterwards on top of these
- * stable positions instead of influencing layout, which is what
- * causes the tangled/crisscrossing look.
+ * Classifies a node into frontend/backend based on its file path first
+ * (a "frontend/" or "backend/" folder segment, matching this project's
+ * own helix-frontend/helix-backend layout and most monorepos), falling
+ * back to file extension when the path gives no signal.
  */
-function layoutGraph(nodes: Node[], hierarchyEdges: Edge[]): Node[] {
-  // Nodes that never appear in a CONTAINS edge (typically external
-  // Module nodes) have no parent/child relationship to lay out at
-  // all. Feeding them into dagre alongside the real tree puts them
-  // all on rank 0 next to the tree root, which reads as one long
-  // horizontal strip. Instead, lay out only the connected tree with
-  // dagre, then place the disconnected nodes in their own grid
-  // cluster underneath it.
-  const participantIds = new Set<string>();
-  hierarchyEdges.forEach(e => { participantIds.add(e.source); participantIds.add(e.target); });
+function classifySide(path: string): Side {
+  const p = (path || '').toLowerCase();
+  if (p.includes('frontend')) return 'frontend';
+  if (p.includes('backend')) return 'backend';
 
-  const treeNodes = nodes.filter(n => participantIds.has(n.id));
-  const isolatedNodes = nodes.filter(n => !participantIds.has(n.id));
+  const ext = p.split('.').pop() || '';
+  if (['jsx', 'tsx', 'css', 'scss', 'html', 'vue'].includes(ext)) return 'frontend';
+  if (['py', 'java', 'go', 'rb', 'php', 'cs', 'rs'].includes(ext)) return 'backend';
 
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 90 });
-  treeNodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
-  hierarchyEdges.forEach(e => g.setEdge(e.source, e.target));
-  dagre.layout(g);
+  // .js/.ts and anything else with no stronger signal defaults to backend
+  // — most bare-.js code in a repo without a frontend/ folder is tooling
+  // or server code rather than UI.
+  return 'backend';
+}
 
-  let maxY = 0;
-  const positionedTree = treeNodes.map(n => {
-    const pos = g.node(n.id);
-    if (!pos) return n;
-    maxY = Math.max(maxY, pos.y);
-    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } };
+/**
+ * Radial "mind map" layout: picks a root node, then places every other
+ * node on a ring whose radius is its shortest hop-distance (BFS) from
+ * that root. Nodes on the same ring are spread evenly around the full
+ * circle, and a ring's radius grows with how many nodes are on it —
+ * so a ring with 77 nodes automatically gets more room instead of
+ * being squeezed into a fixed-width row like a tree layout would.
+ */
+function radialLayout(nodes: Node[], edges: Edge[]): Node[] {
+  if (nodes.length === 0) return nodes;
+
+  // Undirected adjacency for BFS distance — direction doesn't matter
+  // for "how many hops away is this from the root".
+  const adjacency: Record<string, string[]> = {};
+  nodes.forEach(n => { adjacency[n.id] = []; });
+  edges.forEach(e => {
+    if (!adjacency[e.source] || !adjacency[e.target]) return;
+    adjacency[e.source].push(e.target);
+    adjacency[e.target].push(e.source);
   });
 
-  const isolatedY = maxY + NODE_H + 140;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(isolatedNodes.length)));
-  const positionedIsolated = isolatedNodes.map((n, i) => ({
-    ...n,
-    position: {
-      x: (i % cols) * (NODE_W + 40),
-      y: isolatedY + Math.floor(i / cols) * (NODE_H + 40),
-    },
-  }));
+  const degree = (id: string) => adjacency[id]?.length || 0;
 
-  return [...positionedTree, ...positionedIsolated];
+  const byName = (name: string) =>
+    nodes.find(n => (n.data.label || '').toLowerCase() === name.toLowerCase());
+
+  let root: Node | undefined;
+  for (const candidate of ROOT_NAME_CANDIDATES) {
+    root = byName(candidate);
+    if (root) break;
+  }
+  if (!root) {
+    // Fall back to the most-connected File node, or failing that the
+    // most-connected node of any type.
+    const files = nodes.filter(n => (n.data.nodeType || '').toLowerCase() === 'file');
+    const pool = files.length > 0 ? files : nodes;
+    root = pool.reduce((best, n) => (degree(n.id) > degree(best.id) ? n : best), pool[0]);
+  }
+
+  // BFS to assign ring numbers.
+  const ring: Record<string, number> = { [root.id]: 0 };
+  const queue: string[] = [root.id];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const neighbor of adjacency[current] || []) {
+      if (ring[neighbor] === undefined) {
+        ring[neighbor] = ring[current] + 1;
+        queue.push(neighbor);
+      }
+    }
+  }
+  const maxRing = Math.max(0, ...Object.values(ring));
+  // Anything BFS never reached (disconnected from the root entirely)
+  // still gets shown, just pushed one ring further out.
+  nodes.forEach(n => { if (ring[n.id] === undefined) ring[n.id] = maxRing + 2; });
+
+  const nodesByRing: Record<number, Node[]> = {};
+  nodes.forEach(n => {
+    const r = ring[n.id];
+    (nodesByRing[r] ||= []).push(n);
+  });
+
+  const BASE_RING_GAP = 210;
+  const positioned: Node[] = [];
+
+  Object.entries(nodesByRing).forEach(([ringStr, ringNodes]) => {
+    const r = Number(ringStr);
+    if (r === 0) {
+      positioned.push({ ...ringNodes[0], position: { x: -NODE_W / 2, y: -NODE_H / 2 } });
+      return;
+    }
+    // Radius grows both with ring depth and with how many nodes need
+    // to fit around this ring's circumference, whichever is larger.
+    const arcNeeded = ringNodes.length * (NODE_W + 40);
+    const radius = Math.max(BASE_RING_GAP * r, arcNeeded / (2 * Math.PI));
+    // Stagger the starting angle per ring so radial spokes don't all
+    // line up and overlap visually.
+    const angleOffset = (r % 2 === 0 ? 0 : Math.PI / ringNodes.length);
+
+    ringNodes.forEach((n, i) => {
+      const angle = angleOffset + (2 * Math.PI * i) / ringNodes.length;
+      positioned.push({
+        ...n,
+        position: {
+          x: radius * Math.cos(angle) - NODE_W / 2,
+          y: radius * Math.sin(angle) - NODE_H / 2,
+        },
+      });
+    });
+  });
+
+  return positioned;
 }
 
 const TYPE_CONFIG = [
@@ -108,9 +182,12 @@ function findShortestPath(edges: Edge[], startId: string, endId: string): string
 }
 
 function GraphInner({ repoId }: { repoId: string }) {
+  const [rawNodes, setRawNodes]     = useState<Node[]>([]);
+  const [rawEdges, setRawEdges]     = useState<Edge[]>([]);
   const [nodes, setNodes]           = useState<Node[]>([]);
   const [edges, setEdges]           = useState<Edge[]>([]);
   const [baseEdges, setBaseEdges]   = useState<Edge[]>([]);
+  const [activeSide, setActiveSide] = useState<Side>('backend');
   const [search, setSearch]         = useState('');
   const [activeFilters, setActiveFilters] = useState(['file', 'function', 'class', 'module', 'File', 'Function', 'Class', 'Module']);
   const [activeRelFilters, setActiveRelFilters] = useState(['CALLS', 'IMPORTS', 'INHERITS']);
@@ -139,43 +216,43 @@ function GraphInner({ repoId }: { repoId: string }) {
       getRelationships(repoId),
     ]).then(([nodesRes, edgesRes]) => {
       // ── Nodes ──────────────────────────────────────────────────────────
-const rawData = nodesRes.status === 'fulfilled'
-  ? (nodesRes.value.data?.nodes || nodesRes.value.data || [])
-  : [];
+      const rawData = nodesRes.status === 'fulfilled'
+        ? (nodesRes.value.data?.nodes || nodesRes.value.data || [])
+        : [];
 
-// Handle both wrapped {n, labels} format AND flat format
-const apiNodes = rawData.map((item: any) => {
-  // Backend wraps each node as { n: {...properties}, labels: [...] }
-  if (item.n) {
-    const props = item.n;
-    const label = item.labels?.[0] || 'File';
-    return {
-      id: props.id || props.path || props.name || Math.random().toString(),
-      name: props.name || props.path?.split('\\').pop()?.split('/').pop() || 'unknown',
-      type: label,
-      file_path: props.path || props.file_path || '',
-      line_number: props.start_line || props.loc || 0,
-    };
-  }
-  // Already flat format
-  return item;
-});
+      // Handle both wrapped {n, labels} format AND flat format
+      const apiNodes = rawData.map((item: any) => {
+        if (item.n) {
+          const props = item.n;
+          const label = item.labels?.[0] || 'File';
+          return {
+            id: props.id || props.path || props.name || Math.random().toString(),
+            name: props.name || props.path?.split('\\').pop()?.split('/').pop() || 'unknown',
+            type: label,
+            file_path: props.path || props.file_path || '',
+            line_number: props.start_line || props.loc || 0,
+          };
+        }
+        return item;
+      });
 
-const unpositioned: Node[] = apiNodes.map((node: any) => {
-  const nodeType = node.type || 'File';
-  return {
-    id: node.id,
-    type: 'helixNode',
-    position: { x: 0, y: 0 }, // placeholder — dagre fills this in below
-    data: {
-      label: node.name,
-      nodeType,
-      path: node.file_path,
-      lines: node.line_number,
-      color: TYPE_COLOR[nodeType] || '#6366f1',
-    },
-  };
-});
+      const mappedNodes: Node[] = apiNodes.map((node: any) => {
+        const nodeType = node.type || 'File';
+        return {
+          id: node.id,
+          type: 'helixNode',
+          position: { x: 0, y: 0 }, // placeholder — radialLayout fills this in per-side below
+          data: {
+            label: node.name,
+            nodeType,
+            path: node.file_path,
+            lines: node.line_number,
+            side: classifySide(node.file_path),
+            color: TYPE_COLOR[nodeType] || '#6366f1',
+          },
+        };
+      });
+
       // ── Edges ──────────────────────────────────────────────────────────
       const apiRels: {
         source_id: string; target_id: string; type?: string; relationship?: string;
@@ -191,11 +268,8 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
           target:   r.target_id,
           // No permanent label — with real fan-in, labels render at the
           // path midpoint regardless of whether either endpoint is in
-          // view, which looks like a floating label attached to
-          // nothing. Color (from the legend) carries the type instead;
-          // the label still appears on hover, added below. relType is
-          // kept in `data` (not `label`) so counting/filtering/layout
-          // logic below still has something stable to read.
+          // view. Color (from the legend) carries the type by default;
+          // the label appears on hover instead, wired up below.
           type:     'smoothstep',
           animated: relType === 'CALLS',
           style:    { stroke: REL_COLOR[relType] || '#2e2e3e', strokeWidth: 1.5 },
@@ -203,16 +277,42 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
         };
       });
 
-      const hierarchyEdges = mappedEdges.filter(e => (e.data as any)?.relType === 'CONTAINS');
-      const mapped = layoutGraph(unpositioned, hierarchyEdges);
-
-      setNodes(mapped);
-      setEdges(mappedEdges);
-      setBaseEdges(mappedEdges);
+      setRawNodes(mappedNodes);
+      setRawEdges(mappedEdges);
     }).finally(() => setLoading(false));
   }, [repoId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Which sides actually have nodes — drives the tab bar and auto-picks
+  // whichever side exists when only one does.
+  const availableSides = useMemo(() => {
+    const sides = new Set(rawNodes.map(n => n.data.side as Side));
+    return { frontend: sides.has('frontend'), backend: sides.has('backend') };
+  }, [rawNodes]);
+
+  useEffect(() => {
+    if (rawNodes.length === 0) return;
+    if (activeSide === 'frontend' && !availableSides.frontend) setActiveSide('backend');
+    if (activeSide === 'backend' && !availableSides.backend) setActiveSide('frontend');
+  }, [availableSides, activeSide, rawNodes.length]);
+
+  // Recompute the radial layout whenever the raw data or the active
+  // side changes — each side gets its own root and its own rings, so
+  // switching tabs re-centers the mind map on that side's entry point.
+  useEffect(() => {
+    if (rawNodes.length === 0) { setNodes([]); setEdges([]); setBaseEdges([]); return; }
+
+    const sideNodes = rawNodes.filter(n => n.data.side === activeSide);
+    const sideNodeIds = new Set(sideNodes.map(n => n.id));
+    const sideEdges = rawEdges.filter(e => sideNodeIds.has(e.source) && sideNodeIds.has(e.target));
+
+    const positioned = radialLayout(sideNodes, sideEdges);
+    setNodes(positioned);
+    setEdges(sideEdges);
+    setBaseEdges(sideEdges);
+    setSelectedNode(null);
+  }, [rawNodes, rawEdges, activeSide]);
 
   const filtered = nodes.filter(n =>
     activeFilters.some(f => f.toLowerCase() === (n.data.nodeType || '').toLowerCase()) &&
@@ -251,7 +351,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
   const getDeps      = (id: string) => baseEdges.filter(e => e.source === id).map(e => nodes.find(n => n.id === e.target)?.data.label).filter(Boolean);
   const getDependents = (id: string) => baseEdges.filter(e => e.target === id).map(e => nodes.find(n => n.id === e.source)?.data.label).filter(Boolean);
 
-  if (!loading && nodes.length === 0) {
+  if (!loading && rawNodes.length === 0) {
     return (
       <RepoEmptyState icon={Package} title="No graph data yet"
         description="The repository graph hasn't been built yet. Try refreshing after the repository finishes processing."
@@ -260,7 +360,33 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
   }
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-1 min-h-0 flex-col">
+      {/* ── Frontend / Backend toggle ── */}
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-[#1e1e2e] bg-[#0d0d14] flex-shrink-0">
+        {([
+          { key: 'backend' as Side, label: 'Backend', icon: Server },
+          { key: 'frontend' as Side, label: 'Frontend', icon: Monitor },
+        ]).map(({ key, label, icon: Icon }) => {
+          const disabled = !availableSides[key];
+          const active = activeSide === key;
+          return (
+            <button key={key}
+              disabled={disabled}
+              onClick={() => setActiveSide(key)}
+              title={disabled ? `No ${label.toLowerCase()} files detected in this repo` : undefined}
+              className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                disabled
+                  ? 'text-zinc-700 cursor-not-allowed opacity-50'
+                  : active
+                    ? 'bg-indigo-600/15 text-indigo-300 border border-indigo-500/20'
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-[#1a1a25] border border-transparent')}>
+              <Icon size={12} /> {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-1 min-h-0">
       {/* ── Left panel ── */}
       <div className="w-64 flex-shrink-0 border-r border-[#1e1e2e] flex flex-col bg-[#0d0d14]">
         {/* Search */}
@@ -369,7 +495,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
               </div>
             )}
             {/* Fixed dimensions so React Flow renders correctly */}
-            <div style={{ width: '100%', height: 'calc(100vh - 168px)' }}>
+            <div style={{ width: '100%', height: 'calc(100vh - 208px)' }}>
               <ReactFlow
                 nodes={filtered}
                 edges={visibleEdges.map(e => ({
@@ -476,6 +602,7 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
