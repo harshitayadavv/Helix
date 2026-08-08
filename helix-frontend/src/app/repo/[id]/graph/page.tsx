@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import ReactFlow, {
-  Background, BackgroundVariant, MiniMap, ReactFlowProvider,
+  Background, BackgroundVariant, MiniMap, Controls, ReactFlowProvider,
   Node, Edge, NodeChange, EdgeChange, applyNodeChanges, applyEdgeChanges,
-  useReactFlow,
+  useReactFlow, useOnViewportChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -96,7 +96,17 @@ function GraphInner({ repoId }: { repoId: string }) {
   const [traceNodes, setTraceNodes] = useState<string[]>([]);
   const [tracePath, setTracePath]   = useState<string[]>([]);
   const [loading, setLoading]       = useState(true);
-  const { fitView }                 = useReactFlow();
+  const [zoomPct, setZoomPct]       = useState(100);
+  const { fitView, zoomIn, zoomOut, setViewport, getViewport } = useReactFlow();
+
+  useOnViewportChange({
+    onChange: (viewport) => setZoomPct(Math.round(viewport.zoom * 100)),
+  });
+
+  const zoomTo100 = useCallback(() => {
+    const { x, y } = getViewport();
+    setViewport({ x, y, zoom: 1 }, { duration: 200 });
+  }, [getViewport, setViewport]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -344,10 +354,35 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
                 style={{ width: '100%', height: '100%' }}
               >
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e1e2e" />
+                <Controls
+                  showInteractive={false}
+                  position="bottom-left"
+                  style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '8px', overflow: 'hidden' }}
+                />
                 <MiniMap nodeColor={n => TYPE_COLOR[n.data?.nodeType] || '#6366f1'}
                   maskColor="rgba(10,10,15,0.85)"
                   style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '8px' }} />
               </ReactFlow>
+            </div>
+            {/* Zoom readout */}
+            <div className="absolute bottom-4 left-[168px] z-10 flex items-center gap-1 bg-[#0d0d14] border border-[#1e1e2e] rounded-lg px-1 py-1">
+              <button onClick={() => zoomOut({ duration: 150 })}
+                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[#1a1a25] rounded transition-colors text-sm">
+                −
+              </button>
+              <button onClick={zoomTo100}
+                className="px-2 h-7 flex items-center justify-center text-xs text-zinc-400 hover:text-white hover:bg-[#1a1a25] rounded transition-colors tabular-nums min-w-[44px]">
+                {zoomPct}%
+              </button>
+              <button onClick={() => zoomIn({ duration: 150 })}
+                className="w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[#1a1a25] rounded transition-colors text-sm">
+                +
+              </button>
+              <div className="w-px h-4 bg-[#1e1e2e] mx-0.5" />
+              <button onClick={() => fitView({ padding: 0.15, duration: 200 })}
+                className="px-2 h-7 flex items-center justify-center text-[10px] text-zinc-400 hover:text-white hover:bg-[#1a1a25] rounded transition-colors">
+                Fit
+              </button>
             </div>
           </>
         )}
