@@ -97,6 +97,7 @@ function GraphInner({ repoId }: { repoId: string }) {
   const [tracePath, setTracePath]   = useState<string[]>([]);
   const [loading, setLoading]       = useState(true);
   const [zoomPct, setZoomPct]       = useState(100);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const { fitView, zoomIn, zoomOut, setViewport, getViewport } = useReactFlow();
 
   useOnViewportChange({
@@ -165,10 +166,15 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
           id:       `${r.source_id}-${r.target_id}-${relType}`,
           source:   r.source_id,
           target:   r.target_id,
-          label:    relType,
+          // No permanent label — with real fan-in, labels render at the
+          // path midpoint regardless of whether either endpoint is in
+          // view, which looks like a floating label attached to
+          // nothing. Color (from the legend) carries the type instead;
+          // the label still appears on hover, added below.
           type:     'smoothstep',
           animated: relType === 'CALLS',
           style:    { stroke: REL_COLOR[relType] || '#2e2e3e', strokeWidth: 1.5 },
+          data:     { relType },
         };
       });
 
@@ -341,10 +347,16 @@ const unpositioned: Node[] = apiNodes.map((node: any) => {
             <div style={{ width: '100%', height: 'calc(100vh - 168px)' }}>
               <ReactFlow
                 nodes={filtered}
-                edges={visibleEdges}
+                edges={visibleEdges.map(e => ({
+                  ...e,
+                  label: hoveredEdgeId === e.id ? (e.data as any)?.relType : undefined,
+                  style: { ...e.style, strokeWidth: hoveredEdgeId === e.id ? 3 : 1.5 },
+                }))}
                 nodeTypes={nodeTypes}
                 onNodesChange={(changes: NodeChange[]) => setNodes(n => applyNodeChanges(changes, n))}
                 onEdgesChange={(changes: EdgeChange[]) => setEdges(e => applyEdgeChanges(changes, e))}
+                onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
+                onEdgeMouseLeave={() => setHoveredEdgeId(null)}
                 onNodeClick={handleNodeClick}
                 fitView
                 fitViewOptions={{ padding: 0.15 }}
