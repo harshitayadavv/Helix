@@ -190,8 +190,9 @@ function GraphInner({ repoId }: { repoId: string }) {
   const [activeSide, setActiveSide] = useState<Side>('backend');
   const [search, setSearch]         = useState('');
   const [activeFilters, setActiveFilters] = useState(['file', 'function', 'class', 'module', 'File', 'Function', 'Class', 'Module']);
-  const [activeRelFilters, setActiveRelFilters] = useState(['CALLS', 'IMPORTS', 'INHERITS']);
+  const [activeRelFilters, setActiveRelFilters] = useState<string[]>([]);
   const [selectedNode, setSelectedNode]   = useState<Node | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [traceMode, setTraceMode]   = useState(false);
   const [traceNodes, setTraceNodes] = useState<string[]>([]);
   const [tracePath, setTracePath]   = useState<string[]>([]);
@@ -314,17 +315,49 @@ function GraphInner({ repoId }: { repoId: string }) {
     setSelectedNode(null);
   }, [rawNodes, rawEdges, activeSide]);
 
+  useEffect(() => {
+    if (!loading) {
+      const t = setTimeout(() => fitView({ padding: 0.2, duration: 250 }), 50);
+      return () => clearTimeout(t);
+    }
+  }, [focusedNodeId, loading, fitView]);
+
   const filtered = nodes.filter(n =>
     activeFilters.some(f => f.toLowerCase() === (n.data.nodeType || '').toLowerCase()) &&
     (!search || n.data.label.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const visibleNodeIds = new Set(filtered.map(n => n.id));
-  const visibleEdges = edges.filter(e =>
-    activeRelFilters.includes((e.data as any)?.relType || '') &&
-    visibleNodeIds.has(e.source) &&
-    visibleNodeIds.has(e.target)
-  );
+  // Focus mode: clicking a node narrows the canvas to just that node
+  // and its direct neighbors, with edges drawn only between them.
+  // Rendering all edges at once is unreadable past a handful of
+  // nodes — this is the same "click to isolate" pattern tools like
+  // Obsidian's graph view use, and it's what actually makes a
+  // specific relationship inspectable.
+  const focusNeighborIds = useMemo(() => {
+    if (!focusedNodeId) return null;
+    const ids = new Set<string>([focusedNodeId]);
+    baseEdges.forEach(e => {
+      if (e.source === focusedNodeId) ids.add(e.target);
+      if (e.target === focusedNodeId) ids.add(e.source);
+    });
+    return ids;
+  }, [focusedNodeId, baseEdges]);
+
+  const displayedNodes = focusNeighborIds
+    ? filtered.filter(n => focusNeighborIds.has(n.id))
+    : filtered;
+
+  const visibleNodeIds = new Set(displayedNodes.map(n => n.id));
+  const visibleEdges = focusedNodeId
+    // In focus mode, show every relationship touching the focused
+    // node regardless of the type filter — it's a small enough set
+    // that showing everything is more useful than trimming it.
+    ? edges.filter(e => e.source === focusedNodeId || e.target === focusedNodeId)
+    : edges.filter(e =>
+        activeRelFilters.includes((e.data as any)?.relType || '') &&
+        visibleNodeIds.has(e.source) &&
+        visibleNodeIds.has(e.target)
+      );
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (traceMode) {
@@ -343,6 +376,7 @@ function GraphInner({ repoId }: { repoId: string }) {
       });
     } else {
       setSelectedNode(node);
+      setFocusedNodeId(prev => (prev === node.id ? null : node.id));
     }
   }, [traceMode, baseEdges]);
 
@@ -422,7 +456,7 @@ function GraphInner({ repoId }: { repoId: string }) {
         </div>
         {/* Edge legend / filter */}
         <div className="p-3 border-b border-[#1e1e2e]">
-          <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Edges</div>
+          <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Edges (click a node to focus, or show a type globally)</div>
           {REL_CONFIG.map(({ key, label, color }) => {
             const count  = baseEdges.filter(e => (e.data as any)?.relType === key).length;
             const active = activeRelFilters.includes(key);
@@ -494,10 +528,19 @@ function GraphInner({ repoId }: { repoId: string }) {
                 {traceNodes.length === 0 ? 'Click first node' : 'Click second node to trace path'}
               </div>
             )}
+            {focusedNodeId && !traceMode && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-indigo-600/15 border border-indigo-500/30 text-indigo-300 text-xs px-4 py-2 rounded-full">
+                Focused on <span className="font-semibold">{nodes.find(n => n.id === focusedNodeId)?.data.label}</span>
+                <span className="text-indigo-400/60">· {(focusNeighborIds?.size || 1) - 1} connections</span>
+                <button onClick={() => setFocusedNodeId(null)} className="ml-1 underline hover:text-white">
+                  Show full graph
+                </button>
+              </div>
+            )}
             {/* Fixed dimensions so React Flow renders correctly */}
             <div style={{ width: '100%', height: 'calc(100vh - 208px)' }}>
               <ReactFlow
-                nodes={filtered}
+                nodes={displayedNodes}
                 edges={visibleEdges.map(e => ({
                   ...e,
                   label: hoveredEdgeId === e.id ? (e.data as any)?.relType : undefined,
