@@ -497,7 +497,7 @@ function GraphInner({ repoId }: { repoId: string }) {
 
         {/* Path trace */}
         <div className="p-3 border-t border-[#1e1e2e]">
-          <button onClick={() => { setTraceMode(!traceMode); clearTrace(); }}
+          <button onClick={() => { setTraceMode(!traceMode); clearTrace(); setFocusedNodeId(null); }}
             className={cn('w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
               traceMode
                 ? 'bg-red-500/15 text-red-400 border border-red-500/20'
