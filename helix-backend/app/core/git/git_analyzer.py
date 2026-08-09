@@ -80,10 +80,24 @@ class GitAnalyzer:
     # Clone
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_branch_not_found(exc: GitCommandError) -> bool:
+        text = str(exc).lower()
+        return "not found in upstream" in text or (
+            "remote branch" in text and "not found" in text
+        )
+
     async def clone(self, github_url: str, branch: str = "main") -> str:
         """
         Clone a public GitHub repo and return the local path.
         Raises ValueError on invalid URL or clone failure.
+
+        Tries `branch` first (this covers both an explicit user choice
+        and the "main" default). If that specific branch doesn't exist
+        on the remote — the most common failure, since many repos still
+        default to "master" — automatically retries with no branch
+        argument at all, which makes git clone whatever the remote's
+        actual default branch is instead of forcing a guess.
         """
         import asyncio
 
@@ -98,13 +112,32 @@ class GitAnalyzer:
             await asyncio.to_thread(
                 Repo.clone_from,
                 github_url,
-                self._clone_dir.as_posix(), 
+                self._clone_dir.as_posix(),
                 branch=branch,
                 depth=MAX_COMMITS,      # shallow clone keeps it fast
                 single_branch=True,
             )
         except GitCommandError as exc:
-            raise ValueError(f"Git clone failed: {exc}") from exc
+            if not self._is_branch_not_found(exc):
+                raise ValueError(f"Git clone failed: {exc}") from exc
+
+            logger.info(
+                "Branch '%s' not found on %s, retrying with the repository's default branch",
+                branch, github_url,
+            )
+            shutil.rmtree(self._clone_dir, ignore_errors=True)
+            self._clone_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                await asyncio.to_thread(
+                    Repo.clone_from,
+                    github_url,
+                    self._clone_dir.as_posix(),
+                    depth=MAX_COMMITS,   # no `branch=` — clones the remote's actual default
+                    single_branch=True,
+                )
+            except GitCommandError as exc2:
+                raise ValueError(f"Git clone failed: {exc2}") from exc2
 
         return self._clone_dir
 
