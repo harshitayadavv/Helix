@@ -148,6 +148,38 @@ async def get_api_key(
 
     return key_prefix
 
+async def get_current_account_id(
+    request: Request,
+    raw_key: Optional[str] = Depends(api_key_header),
+    db: AsyncSession = Depends(get_db),
+) -> str:
+    """
+    Validates X-API-Key and returns the account's stable id (ApiKey.id),
+    for use as an ownership reference on records like Repository.
+
+    Deliberately separate from get_api_key's return value: that function
+    returns key_prefix, which login() rotates on every call. Using
+    key_prefix as an ownership key would silently orphan a user's own
+    repositories the moment they logged in again. ApiKey.id never changes.
+    """
+    if not raw_key:
+        raise HTTPException(status_code=401, detail="X-API-Key header is required.")
+
+    key_prefix = raw_key[:8]
+    expected_hash = _hash_api_key(raw_key)
+
+    result = await db.execute(
+        select(ApiKey).where(
+            ApiKey.key_prefix == key_prefix,
+            ApiKey.key_hash   == expected_hash,
+            ApiKey.is_active  == True,
+        )
+    )
+    matched = result.scalar_one_or_none()
+    if matched is None:
+        raise HTTPException(status_code=401, detail="Invalid or inactive API key.")
+
+    return str(matched.id)
 
 async def _enforce_rate_limits(key_prefix: str, path: str) -> None:
     r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)

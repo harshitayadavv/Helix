@@ -61,12 +61,13 @@ class Base(DeclarativeBase):
 class RepositoryModel(Base):
     __tablename__ = "repositories"
 
-    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name           = Column(String(255), nullable=False)
-    status         = Column(String(64), nullable=False, default="pending")
-    source_type    = Column(String(32), nullable=False, default="upload")
-    source_url     = Column(String(1024), nullable=True)
-    storage_path   = Column(String(1024), nullable=True)
+    id               = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name             = Column(String(255), nullable=False)
+    status           = Column(String(64), nullable=False, default="pending")
+    source_type      = Column(String(32), nullable=False, default="upload")
+    source_url       = Column(String(1024), nullable=True)
+    storage_path     = Column(String(1024), nullable=True)
+    owner_account_id = Column(String(64), nullable=True, index=True)
     file_count       = Column(Integer, default=0)
     function_count   = Column(Integer, default=0)
     class_count      = Column(Integer, default=0)

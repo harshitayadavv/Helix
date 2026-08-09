@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.auth.auth_handler import get_current_account_id
 from app.core.graph.neo4j_client import neo4j_client
 from app.db.postgres import AsyncSessionLocal, RepositoryModel, get_db
 from app.models.repository import RepoStatus, RepositoryOut
@@ -70,6 +71,7 @@ async def _run_ingestion(repo_id: str, zip_path: str) -> None:
 async def upload_repository(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    account_id: str = Depends(get_current_account_id),
 ):
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip archives are supported.")
@@ -97,6 +99,7 @@ async def upload_repository(
         status=RepoStatus.PENDING.value,
         source_type="upload",
         storage_path=zip_path,
+        owner_account_id=account_id,
     )
     db.add(repo)
     await db.commit()
@@ -109,28 +112,49 @@ async def upload_repository(
 
 
 @router.get("/{repo_id}/status", response_model=RepositoryOut)
-async def get_repository_status(repo_id: str, db: AsyncSession = Depends(get_db)):
+async def get_repository_status(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    account_id: str = Depends(get_current_account_id),
+):
     result = await db.execute(
-        select(RepositoryModel).where(RepositoryModel.id == repo_id)
+        select(RepositoryModel).where(
+            RepositoryModel.id == repo_id,
+            RepositoryModel.owner_account_id == account_id,
+        )
     )
     repo = result.scalar_one_or_none()
     if repo is None:
+        # Same 404 whether the repo doesn't exist or belongs to someone
+        # else — don't leak which case it is.
         raise HTTPException(status_code=404, detail="Repository not found.")
     return repo
 
 
 @router.get("", response_model=list[RepositoryOut])
-async def list_repositories(db: AsyncSession = Depends(get_db)):
+async def list_repositories(
+    db: AsyncSession = Depends(get_db),
+    account_id: str = Depends(get_current_account_id),
+):
     result = await db.execute(
-        select(RepositoryModel).order_by(RepositoryModel.created_at.desc())
+        select(RepositoryModel)
+        .where(RepositoryModel.owner_account_id == account_id)
+        .order_by(RepositoryModel.created_at.desc())
     )
     return result.scalars().all()
 
 
 @router.delete("/{repo_id}", status_code=204)
-async def delete_repository(repo_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_repository(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    account_id: str = Depends(get_current_account_id),
+):
     result = await db.execute(
-        select(RepositoryModel).where(RepositoryModel.id == repo_id)
+        select(RepositoryModel).where(
+            RepositoryModel.id == repo_id,
+            RepositoryModel.owner_account_id == account_id,
+        )
     )
     repo = result.scalar_one_or_none()
     if repo is None:
