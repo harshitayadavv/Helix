@@ -55,14 +55,18 @@ class RepoProcessor:
             # the repo's Postgres status stuck at "pending" forever.
             # It's now bounded and best-effort: a failure here no longer
             # blocks the repo from being marked COMPLETED.
-            try:
-                await asyncio.wait_for(self._generate_embeddings(parsed_files), timeout=120.0)
-            except asyncio.TimeoutError:
-                logger.warning("Embedding generation timed out for repo %s; continuing without it.", self.repo_id)
-                await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings timed out, skipping.")
-            except Exception:
-                logger.exception("Embedding generation failed for repo %s; continuing without it.", self.repo_id)
-                await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings failed, skipping.")
+            if settings.ENABLE_EMBEDDINGS:
+                try:
+                    await asyncio.wait_for(self._generate_embeddings(parsed_files), timeout=120.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Embedding generation timed out for repo %s; continuing without it.", self.repo_id)
+                    await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings timed out, skipping.")
+                except Exception:
+                    logger.exception("Embedding generation failed for repo %s; continuing without it.", self.repo_id)
+                    await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings failed, skipping.")
+            else:
+                logger.info("Skipping embeddings for repo %s (ENABLE_EMBEDDINGS=false).", self.repo_id)
+                await websocket_manager.send_progress(self.repo_id, RepoStatus.GENERATING_EMBEDDINGS.value, 95.0, "Embeddings disabled for this deployment.")
 
             await websocket_manager.send_progress(self.repo_id, RepoStatus.COMPLETED.value, 100.0, "Processing complete.")
             return parsed_files

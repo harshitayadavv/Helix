@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    ENABLE_EMBEDDINGS: bool = True  
     # --- App ---
     APP_NAME: str = "Helix"
     APP_ENV: str = "development"
