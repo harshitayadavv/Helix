@@ -35,16 +35,22 @@ class GraphBuilder:
         if skipped:
             logger.warning("Skipping graph build for %d file(s) with parse errors", skipped)
 
-        try:
-            await self._upsert_files(usable)
-            await self._upsert_functions(usable)
-            await self._upsert_classes_and_methods(usable)
-            await self._upsert_inherits(usable)
-            await self._upsert_imports(usable)
-        except Exception:
-            logger.exception("Failed building graph for repo %s", self.repo_id)
+        # Previously wrapped in try/except that logged and swallowed any
+        # failure here. Postgres status/counts are computed from the
+        # in-memory parsed_files list, not read back from Neo4j — so a
+        # Neo4j write failure resulted in the repo being marked
+        # COMPLETED with real-looking counts while Neo4j held nothing.
+        # Letting this raise lets _run_ingestion correctly mark the repo
+        # FAILED with the real error message instead.
+        await self._upsert_files(usable)
+        await self._upsert_functions(usable)
+        await self._upsert_classes_and_methods(usable)
+        await self._upsert_inherits(usable)
+        await self._upsert_imports(usable)
 
-        # Final pass: CALLS edges need every Function node to exist first.
+        # CALLS edges are best-effort enrichment on an already-persisted
+        # graph — a resolution failure here shouldn't invalidate the
+        # whole build, so this stays caught inside _link_calls itself.
         await self._link_calls(usable)
 
     async def _upsert_files(self, parsed_files: List[ParsedFile]) -> None:
