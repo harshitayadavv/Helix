@@ -32,11 +32,12 @@ def _build_tools(repo_id: str):
     @tool
     async def semantic_search(query: str, top_k: int = 8) -> str:
         """Find functions/classes in the codebase semantically related to a natural-language query."""
+        if not settings.ENABLE_EMBEDDINGS:
+            return "Semantic search is currently disabled for this deployment."
         results = await hybrid_search.search(query, repo_id=repo_id, top_k=top_k)
         if not results:
             return "No relevant code entities found."
         return "\n".join(f"- {r.type} `{r.name}` in {r.file_path} (score={r.score:.3f})" for r in results)
-
     @tool
     async def query_graph(cypher: str) -> str:
         """
