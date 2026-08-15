@@ -110,12 +110,35 @@ class Neo4jClient:
         return await result.data()
 
     async def ensure_constraints(self) -> None:
-        """Create uniqueness constraints used by the graph schema (idempotent)."""
+        """
+        Create constraints/indexes used by the graph schema (idempotent).
+
+        file_path_unique and module_name_unique (dropped below) were the
+        root cause behind graphs silently ending up empty: every File/
+        Module MERGE in GraphBuilder keys on (path, repo_id) / (name,
+        repo_id) together, correctly scoped per repository — but these
+        constraints enforced uniqueness on path/name ALONE, globally
+        across every repo ever ingested. The moment a second repo
+        contained a file or import with a name already used by any
+        earlier repo (eslint.config.js, package.json, react, os, ...),
+        the whole batched write for that node type threw
+        ConstraintValidationFailed and rolled back atomically — so that
+        repo's Postgres row still said 'completed' (counts come from
+        parsed data in memory) while Neo4j received none of it.
+        """
         statements = [
-            "CREATE CONSTRAINT file_path_unique IF NOT EXISTS FOR (f:File) REQUIRE f.path IS UNIQUE",
+            "DROP CONSTRAINT file_path_unique IF EXISTS",
+            "DROP CONSTRAINT module_name_unique IF EXISTS",
             "CREATE CONSTRAINT function_id_unique IF NOT EXISTS FOR (fn:Function) REQUIRE fn.id IS UNIQUE",
             "CREATE CONSTRAINT class_id_unique IF NOT EXISTS FOR (c:Class) REQUIRE c.id IS UNIQUE",
-            "CREATE CONSTRAINT module_name_unique IF NOT EXISTS FOR (m:Module) REQUIRE m.name IS UNIQUE",
+            # Regular (non-unique) indexes replace the dropped constraints
+            # for query performance. Correctness for "one node per
+            # (path, repo_id)" is already guaranteed by every MERGE in
+            # GraphBuilder keying on that exact property pair — the
+            # global constraint was never actually needed for that, only
+            # harmful.
+            "CREATE INDEX file_path_repo_idx IF NOT EXISTS FOR (f:File) ON (f.path, f.repo_id)",
+            "CREATE INDEX module_name_repo_idx IF NOT EXISTS FOR (m:Module) ON (m.name, m.repo_id)",
         ]
         for stmt in statements:
             try:
