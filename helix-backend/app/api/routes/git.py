@@ -20,21 +20,26 @@ import asyncio
 import logging
 import os
 import uuid
+import zipfile
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.repository import _run_ingestion
 from app.config import settings
 from app.core.auth.auth_handler import get_current_account_id
 from app.core.git.git_analyzer import GitAnalyzer
-from app.db.postgres import RepositoryModel, get_db
+from app.db.postgres import AsyncSessionLocal, RepositoryModel, get_db
 from app.models.repository import RepoStatus
 
 logger = logging.getLogger("helix.api.git")
 router = APIRouter()
+
+_ALLOWED_HOSTS = ("https://github.com", "https://gitlab.com", "https://bitbucket.org")
+_CLONE_TIMEOUT_SECONDS = 180.0
 
 
 class CloneRequest(BaseModel):
@@ -61,6 +66,90 @@ def _humanize_git_error(raw: str) -> str:
     return "Failed to clone this repository. Check the URL and branch, then try again."
 
 
+async def _mark_failed(repo_id: str, message: str) -> None:
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(RepositoryModel)
+            .where(RepositoryModel.id == repo_id)
+            .values(status=RepoStatus.FAILED.value, error_message=message)
+        )
+        await db.commit()
+
+
+async def _clone_and_prepare(repo_id: str, github_url: str, branch: str) -> str:
+    """Clones the repo, extracts commit history, and zips the source for
+    ingestion. Returns the path to the zip file. Raises ValueError on a
+    clone failure (with the real git error attached), or any other
+    exception on a packaging failure."""
+    async with AsyncSessionLocal() as db:
+        analyzer = GitAnalyzer(repo_id=repo_id, db=db)
+        clone_dir = await analyzer.clone(github_url, branch)  # may raise ValueError
+
+        try:
+            commits = await analyzer.extract_commits()
+            await analyzer.persist_commits(commits)
+        except Exception:
+            logger.exception("Git log extraction failed for %s", repo_id)
+
+    zip_path = os.path.join(settings.REPO_STORAGE_PATH, repo_id, "upload.zip")
+
+    def _zip():
+        os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _dirs, files in os.walk(clone_dir):
+                for file in files:
+                    abs_file = os.path.join(root, file)
+                    arcname = os.path.relpath(abs_file, clone_dir)
+                    zf.write(abs_file, arcname)
+
+    await asyncio.to_thread(_zip)
+    return zip_path
+
+
+async def _run_clone_and_ingest(repo_id: str, github_url: str, branch: str) -> None:
+    """
+    Runs clone -> commit history -> zip -> ingest entirely in the
+    background, mirroring the ZIP-upload flow. This used to run
+    synchronously inside the HTTP request handler: on a slow clone or
+    flaky network to the git host, that could exceed Render's proxy
+    timeout, silently dropping the connection while the backend kept
+    working — the frontend would then hang indefinitely with no
+    success or failure ever delivered.
+
+    Wrapped in a timeout so a genuinely hung clone (e.g. a network
+    partition) fails loudly instead of leaving the repo stuck on
+    'pending' forever with no explanation.
+    """
+    try:
+        zip_path = await asyncio.wait_for(
+            _clone_and_prepare(repo_id, github_url, branch),
+            timeout=_CLONE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Clone timed out after %.0fs for repo %s (%s)", _CLONE_TIMEOUT_SECONDS, repo_id, github_url)
+        await _mark_failed(
+            repo_id,
+            "Clone timed out — the repository may be too large or the connection too slow. Try again or use a smaller repo.",
+        )
+        return
+    except ValueError as exc:
+        # Log the REAL error server-side before showing the user a
+        # friendly one. Previously the raw message was only used to
+        # compute the friendly text and then discarded — meaning a
+        # clone failure that didn't match one of the known patterns
+        # showed the same generic fallback with zero way to diagnose
+        # what actually went wrong.
+        logger.exception("Clone failed for repo %s (%s)", repo_id, github_url)
+        await _mark_failed(repo_id, _humanize_git_error(str(exc)))
+        return
+    except Exception as exc:
+        logger.exception("Unexpected error preparing cloned repo %s (%s)", repo_id, github_url)
+        await _mark_failed(repo_id, f"Failed to package cloned repo: {exc}")
+        return
+
+    await _run_ingestion(repo_id, zip_path)
+
+
 @router.post("/clone", status_code=201)
 async def clone_repository(
     payload: CloneRequest,
@@ -70,11 +159,18 @@ async def clone_repository(
     """
     Clone a public GitHub / GitLab / Bitbucket repository and trigger
     the same ingestion pipeline as a ZIP upload.
+
+    Returns almost immediately with status=pending — the actual clone,
+    commit history extraction, zipping, and ingestion all run in the
+    background. Only cheap, instant validation (URL format) happens
+    synchronously here.
     """
+    if not payload.github_url.startswith(_ALLOWED_HOSTS):
+        raise HTTPException(status_code=400, detail="Only public GitHub / GitLab / Bitbucket URLs are supported.")
+
     repo_id = str(uuid.uuid4())
     repo_name = payload.name or payload.github_url.rstrip("/").split("/")[-1].removesuffix(".git")
 
-    # Create DB record first so status is visible immediately.
     repo = RepositoryModel(
         id=repo_id,
         name=repo_name,
@@ -87,57 +183,15 @@ async def clone_repository(
     await db.commit()
     await db.refresh(repo)
 
-    # Perform the clone synchronously here (it's async / to_thread inside).
-    analyzer = GitAnalyzer(repo_id=repo_id, db=db)
-    try:
-        clone_dir = await analyzer.clone(payload.github_url, payload.branch)
-    except ValueError as exc:
-        friendly = _humanize_git_error(str(exc))
-        repo.status = RepoStatus.FAILED.value
-        repo.error_message = friendly
-        await db.commit()
-        raise HTTPException(status_code=400, detail=friendly)
-
-    # Extract git history in the background (non-blocking).
-    try:
-        commits = await analyzer.extract_commits()
-        await analyzer.persist_commits(commits)
-    except Exception:
-        logger.exception("Git log extraction failed for %s", repo_id)
-
-    # Zip up the cloned source so the existing ingestion pipeline can process it.
-    zip_path = os.path.join(settings.REPO_STORAGE_PATH, repo_id, "upload.zip")
-    try:
-        import zipfile
-        src_dir = clone_dir
-
-        def _zip():
-            os.makedirs(os.path.dirname(zip_path), exist_ok=True)
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for root, _dirs, files in os.walk(src_dir):
-                    for file in files:
-                        abs_file = os.path.join(root, file)
-                        arcname = os.path.relpath(abs_file, src_dir)
-                        zf.write(abs_file, arcname)
-
-        await asyncio.to_thread(_zip)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to package cloned repo: {exc}")
-
-    # Dispatch the ingestion task the same way uploads do — this project
-    # has no reliable Celery worker path in production; process_repository_task
-    # .delay() previously queued the job with nothing consuming it correctly,
-    # leaving cloned repos stuck or failing with asyncio event-loop errors.
-    asyncio.create_task(_run_ingestion(repo_id, zip_path))
-    logger.info("Ingestion task created for cloned repo %s", repo_id)
+    asyncio.create_task(_run_clone_and_ingest(repo_id, payload.github_url, payload.branch))
+    logger.info("Clone task created for repo %s (%s)", repo_id, payload.github_url)
 
     return {
         "id": str(repo.id),
         "name": repo.name,
         "status": repo.status,
         "source_url": repo.source_url,
-        "commits_extracted": len(commits) if 'commits' in dir() else 0,
-        "message": "Repository cloned. Ingestion pipeline started.",
+        "message": "Clone started. Track progress from the dashboard.",
     }
 
 
