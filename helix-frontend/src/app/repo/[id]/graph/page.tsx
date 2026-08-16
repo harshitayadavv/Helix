@@ -31,18 +31,32 @@ type Side = 'frontend' | 'backend';
  * own helix-frontend/helix-backend layout and most monorepos), falling
  * back to file extension when the path gives no signal.
  */
+// Filenames that unambiguously signal frontend build tooling, checked
+// before falling back to extension-only guessing. Config files for
+// Vite/Tailwind/PostCSS/ESLint end in plain .js, which previously fell
+// through to the backend default — misclassifying an entire frontend
+// project's config files as backend.
+const FRONTEND_TOOLING_FILES = [
+  'vite.config', 'webpack.config', 'tailwind.config', 'postcss.config',
+  'eslint.config', 'babel.config', 'next.config', 'rollup.config',
+  'vitest.config', 'jest.config',
+];
+
 function classifySide(path: string): Side {
   const p = (path || '').toLowerCase();
   if (p.includes('frontend')) return 'frontend';
   if (p.includes('backend')) return 'backend';
 
+  const basename = p.split('/').pop() || '';
+  if (FRONTEND_TOOLING_FILES.some(name => basename.startsWith(name))) return 'frontend';
+
   const ext = p.split('.').pop() || '';
   if (['jsx', 'tsx', 'css', 'scss', 'html', 'vue'].includes(ext)) return 'frontend';
   if (['py', 'java', 'go', 'rb', 'php', 'cs', 'rs'].includes(ext)) return 'backend';
 
-  // .js/.ts and anything else with no stronger signal defaults to backend
-  // — most bare-.js code in a repo without a frontend/ folder is tooling
-  // or server code rather than UI.
+  // Bare .js/.ts with no stronger signal defaults to backend — most
+  // remaining unclassified .js in a repo without a frontend/ folder
+  // and without a recognized tooling filename is server code.
   return 'backend';
 }
 
