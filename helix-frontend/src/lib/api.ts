@@ -111,8 +111,20 @@ export const runImpact = (repoId: string, nodeId: string, nodeType: string) =>
 
 // ─── Search ───────────────────────────────────────────────
 export const searchCode = (query: string, repoId: string, type = 'all') =>
-  api.get('/search', { params: { q: query, repo_id: repoId, type } });
-
+  api.get('/search', {
+    params: {
+      q: query,
+      repo_id: repoId,
+      // Backend only recognizes Function | Class | File | Module, or
+      // the param omitted entirely for "no filter" — it has no case
+      // for the literal string "all". Sending type=all was rejected
+      // outright with a 400 before the search ever ran, so every
+      // search with the default "All" filter silently returned zero
+      // results regardless of query.
+      ...(type && type !== 'all' ? { type } : {}),
+    },
+  });
+  
 export const getSearchHistory = (repoId: string) =>
   api.get(`/search/history/${repoId}`);
 
