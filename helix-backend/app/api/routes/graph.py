@@ -49,11 +49,35 @@ async def get_nodes(repo_id: str, node_type: Optional[str] = Query(default=None)
 
 
 @router.get("/{repo_id}/relationships")
-async def get_relationships(repo_id: str, rel_type: Optional[str] = Query(default=None), limit: int = Query(default=200, le=1000)):
+async def get_relationships(repo_id: str, rel_type: Optional[str] = Query(default=None), limit: int = Query(default=3000, le=8000)):
     rel_filter = f":{rel_type}" if rel_type else ""
+    # Same class of bug as /nodes: an unordered MATCH...LIMIT gives no
+    # fairness guarantee across relationship types or across which side
+    # of a frontend/backend split gets enumerated first. On a repo with
+    # enough nodes, high-volume types (CALLS, INHERITS) or one side's
+    # relationships alone could consume the entire cap before ever
+    # returning a single CONTAINS/IMPORTS edge or a single edge from
+    # the other side — exactly what produced 'main.py: 0 connections'
+    # despite it clearly containing functions, and an entire frontend
+    # side reading zero edges across every type. CONTAINS and IMPORTS
+    # are prioritized since they're structurally load-bearing (file
+    # containment, module dependencies) and comparatively low-volume
+    # next to CALLS, which is ordered last since it's typically both
+    # the highest-volume type and the least likely to be needed for
+    # basic graph coherence. The limit itself is also raised well past
+    # anything this app's repos have hit so far, as a second layer of
+    # safety on top of the ordering.
     query = f"""
     MATCH (a)-[r{rel_filter}]->(b)
     WHERE a.repo_id = $repo_id
+    WITH a, r, b,
+         CASE type(r)
+           WHEN 'CONTAINS' THEN 0
+           WHEN 'IMPORTS' THEN 1
+           WHEN 'INHERITS' THEN 2
+           ELSE 3
+         END AS priority
+    ORDER BY priority
     RETURN coalesce(a.id, a.path, a.name) AS source_id,
            type(r) AS type,
            coalesce(b.id, b.path, b.name) AS target_id
