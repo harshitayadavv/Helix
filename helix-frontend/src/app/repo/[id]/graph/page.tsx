@@ -21,6 +21,9 @@ const NODE_H = 64;
 const ROOT_NAME_CANDIDATES = [
   'main.py', 'app.py', 'main.js', 'app.js', 'index.js', 'index.ts',
   'app.jsx', 'app.tsx', 'main.go', 'main.rb', 'main.java', 'program.cs',
+  // Next.js App Router entry files — checked after the more definitive
+  // main/app/index candidates above, since a project can have both.
+  'layout.tsx', 'layout.jsx', 'page.tsx', 'page.jsx',
 ];
 
 type Side = 'frontend' | 'backend';
@@ -83,8 +86,16 @@ function radialLayout(nodes: Node[], edges: Edge[]): Node[] {
 
   const degree = (id: string) => adjacency[id]?.length || 0;
 
-  const byName = (name: string) =>
-    nodes.find(n => (n.data.label || '').toLowerCase() === name.toLowerCase());
+  const byName = (name: string): Node | undefined => {
+    const matches = nodes.filter(n => (n.data.label || '').toLowerCase() === name.toLowerCase());
+    if (matches.length === 0) return undefined;
+    // App Router projects have a page.tsx/layout.tsx per route folder,
+    // not just one — the shallowest path is almost always the actual
+    // project root, since nested routes add path segments.
+    return matches.reduce((shortest, n) =>
+      ((n.data.path as string)?.length ?? Infinity) < ((shortest.data.path as string)?.length ?? Infinity) ? n : shortest
+    );
+  };
 
   let root: Node | undefined;
   for (const candidate of ROOT_NAME_CANDIDATES) {
