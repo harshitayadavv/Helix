@@ -15,12 +15,29 @@ _FORBIDDEN_KEYWORDS = ("CREATE", "MERGE", "DELETE", "SET", "DROP", "REMOVE", "DE
 
 
 @router.get("/{repo_id}/nodes")
-async def get_nodes(repo_id: str, node_type: Optional[str] = Query(default=None), limit: int = Query(default=100, le=500)):
+async def get_nodes(repo_id: str, node_type: Optional[str] = Query(default=None), limit: int = Query(default=500, le=1000)):
     label_filter = f":{node_type}" if node_type else ""
+    # Ordered so File/Module/Class nodes are always returned before the
+    # usually far more numerous Function nodes. Without this, an
+    # unordered MATCH ... LIMIT on any repo with 100+ functions could
+    # fill the entire limit with Function nodes before a single File or
+    # Module was ever returned — Neo4j gives no ordering guarantee on
+    # an unordered MATCH, so structural nodes (the ones that actually
+    # anchor the layout and the frontend/backend split) could get
+    # starved out entirely on larger repos, even though they were
+    # written correctly during ingestion.
     query = f"""
     MATCH (n{label_filter})
     WHERE n.repo_id = $repo_id
-    RETURN n, labels(n) AS labels
+    WITH n, labels(n) AS labels,
+         CASE labels(n)[0]
+           WHEN 'File' THEN 0
+           WHEN 'Module' THEN 1
+           WHEN 'Class' THEN 2
+           ELSE 3
+         END AS priority
+    ORDER BY priority, coalesce(n.path, n.name)
+    RETURN n, labels
     LIMIT $limit
     """
     try:
