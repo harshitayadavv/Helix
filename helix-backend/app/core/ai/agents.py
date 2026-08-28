@@ -34,7 +34,11 @@ def _build_tools(repo_id: str):
         """Find functions/classes in the codebase semantically related to a natural-language query."""
         if not settings.ENABLE_EMBEDDINGS:
             return "Semantic search is currently disabled for this deployment."
-        results = await hybrid_search.search(query, repo_id=repo_id, top_k=top_k)
+        try:
+            results = await hybrid_search.search(query, repo_id=repo_id, top_k=top_k)
+        except Exception as exc:
+            logger.exception("semantic_search tool failed for repo %s", repo_id)
+            return f"Semantic search failed: {exc}"
         if not results:
             return "No relevant code entities found."
         return "\n".join(f"- {r.type} `{r.name}` in {r.file_path} (score={r.score:.3f})" for r in results)
@@ -103,6 +107,6 @@ async def run_agent_query(question: str, repo_id: str) -> str:
         )
         final_message = result["messages"][-1]
         return getattr(final_message, "content", str(final_message)) or "I couldn't generate an answer."
-    except Exception:
+    except Exception as exc:
         logger.exception("Agent execution failed for repo %s", repo_id)
-        return "Sorry, I ran into an error trying to answer that question."
+        return f"Sorry, I ran into an error trying to answer that question. Debug: {type(exc).__name__}: {exc}"
