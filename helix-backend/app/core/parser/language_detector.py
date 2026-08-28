@@ -14,7 +14,7 @@ EXTENSION_LANGUAGE_MAP = {
     ".mjs": "javascript",
     ".cjs": "javascript",
     ".ts": "typescript",
-    ".tsx": "typescript",
+    ".tsx": "tsx",
     ".java": "java",
     ".cpp": "cpp",
     ".cc": "cpp",
@@ -31,7 +31,7 @@ IGNORED_DIRS = {
     ".mypy_cache", ".pytest_cache", "coverage", ".next", "egg-info",
 }
 
-SUPPORTED_LANGUAGES = {"python", "javascript", "typescript", "java", "cpp"}
+SUPPORTED_LANGUAGES = {"python", "javascript", "typescript", "tsx", "java", "cpp"}
 
 
 def detect_language(file_path: str) -> Optional[str]:

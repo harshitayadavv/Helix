@@ -55,6 +55,13 @@ def _load_typescript_language() -> Optional[Language]:
         logger.exception("Failed to load tree-sitter-typescript.")
         return None
 
+def _load_tsx_language() -> Optional[Language]:
+    try:
+        import tree_sitter_typescript as tsts
+        return Language(tsts.language_tsx())
+    except Exception:
+        logger.exception("Failed to load tree-sitter-typescript (TSX grammar).")
+        return None
 
 @dataclass
 class _Queries:
@@ -143,7 +150,10 @@ _QUERY_STRINGS["typescript"] = {
     **_QUERY_STRINGS["javascript"],
     "class": "(class_declaration name: (type_identifier) @class.name) @class.node",
 }
-
+# TSX is a distinct tree-sitter grammar from plain TypeScript (it adds JSX
+# node types), but function/class/import/call node shapes are identical,
+# so it can safely reuse TypeScript's query strings.
+_QUERY_STRINGS["tsx"] = _QUERY_STRINGS["typescript"]
 
 _registry: Dict[str, _LangConfig] = {}
 
@@ -157,6 +167,7 @@ def _build_registry() -> Dict[str, _LangConfig]:
         "python": lambda: _load_language("tree_sitter_python"),
         "javascript": lambda: _load_language("tree_sitter_javascript"),
         "typescript": _load_typescript_language,
+        "tsx": _load_tsx_language,
         "java": lambda: _load_language("tree_sitter_java"),
         "cpp": lambda: _load_language("tree_sitter_cpp"),
     }
