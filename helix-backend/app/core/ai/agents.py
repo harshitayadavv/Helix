@@ -103,7 +103,7 @@ async def run_agent_query(question: str, repo_id: str) -> str:
         compiled_graph = _build_graph(repo_id)
         result = await compiled_graph.ainvoke(
             {"messages": [HumanMessage(content=question)], "repo_id": repo_id},
-            config={"recursion_limit": 12},
+            config={"recursion_limit": 30},
         )
         final_message = result["messages"][-1]
         return getattr(final_message, "content", str(final_message)) or "I couldn't generate an answer."

@@ -20,6 +20,9 @@ to inspect its exact relationships (callers, callees, inheritance, imports).
 must filter by repo_id.
 - Be concise but specific: cite file paths and function/class names in your answer.
 - If the tools return nothing useful, say so plainly instead of guessing.
+- Be efficient: use at most 3-4 tool calls total. Once you have enough information \
+to give a reasonably complete answer, stop calling tools and write your final answer \
+rather than continuing to search for more.
 """
 
 CYPHER_GENERATION_GUIDE = """Useful node labels: File, Function, Class, Module.
