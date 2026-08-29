@@ -1,11 +1,9 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { Search, Bell, Terminal, ChevronRight, LogOut, User, Settings } from 'lucide-react';
+import { Search, Terminal, ChevronRight, LogOut, User, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CommandPalette } from '@/components/command/CommandPalette';
-import { NotificationDrawer } from '@/components/notifications/NotificationDrawer';
-import { useNotifications } from '@/components/notifications/useNotifications';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -29,7 +27,6 @@ export function TopBar() {
   const avatarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const path = usePathname();
-  const { notifications, drawerOpen, setDrawerOpen, unreadCount, dismiss, clearAll, openDrawer } = useNotifications();
 
   // Build breadcrumbs from path
   const breadcrumbs: { label: string }[] = [];
@@ -98,15 +95,6 @@ export function TopBar() {
             <Terminal size={14} />
           </Button>
 
-          <Button variant="ghost" size="icon" className={cn('w-8 h-8 relative')} onClick={openDrawer}>
-            <Bell size={14} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </Button>
-
           {/* Avatar */}
           <div ref={avatarRef} className="relative">
             <button
@@ -150,13 +138,6 @@ export function TopBar() {
       </header>
 
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
-      <NotificationDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        notifications={notifications}
-        onDismiss={dismiss}
-        onClearAll={clearAll}
-      />
     </>
   );
 }
