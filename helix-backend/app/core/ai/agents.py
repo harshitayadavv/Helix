@@ -120,7 +120,29 @@ async def run_agent_query(question: str, repo_id: str) -> str:
             config={"recursion_limit": 30},
         )
         final_message = result["messages"][-1]
-        return getattr(final_message, "content", str(final_message)) or "I couldn't generate an answer."
+        content = getattr(final_message, "content", None)
+
+        if content:
+            return content
+
+        # Content came back empty — log everything about the final message so
+        # we can see whether this is a reasoning-only response, a truncated
+        # response, or something else entirely.
+        reasoning = getattr(final_message, "additional_kwargs", {}).get("reasoning_content") or \
+                    getattr(final_message, "additional_kwargs", {}).get("reasoning")
+        logger.warning(
+            "Agent finished with empty content for repo %s. type=%s tool_calls=%s "
+            "additional_kwargs=%s response_metadata=%s",
+            repo_id,
+            type(final_message).__name__,
+            getattr(final_message, "tool_calls", None),
+            getattr(final_message, "additional_kwargs", None),
+            getattr(final_message, "response_metadata", None),
+        )
+        if reasoning:
+            return f"[No final answer text was returned, only reasoning. Debug — reasoning content: {reasoning[:1500]}]"
+        finish_reason = (getattr(final_message, "response_metadata", {}) or {}).get("finish_reason")
+        return f"I couldn't generate an answer. Debug: empty content, finish_reason={finish_reason}"
     except Exception as exc:
         logger.exception("Agent execution failed for repo %s", repo_id)
         return f"Sorry, I ran into an error trying to answer that question. Debug: {type(exc).__name__}: {exc}"
