@@ -28,15 +28,21 @@ path CONTAINS 'session'), then return everything that File CONTAINS, rather than
 filtering Function.name by the same keyword. If a name-based search returns nothing, \
 retry once with a path-based search before concluding the feature doesn't exist.
 - Function nodes may have a `decorators` property (a list of strings, e.g. \
-["router.post('/debates')"]). To find real API endpoints (as opposed to guessing \
-from function names), query for functions whose decorators contain 'router.', \
-'app.get', 'app.post', 'app.put', 'app.delete', or similar framework routing calls, \
-and report the exact path/method text found in the decorator rather than inferring it.
-- Example: to find API endpoints, run a single query like:
+["router.post('/debates')"]). ONLY when the user specifically asks about API \
+endpoints, routes, or HTTP handlers, query for functions whose decorators contain \
+'router.', 'app.get', 'app.post', 'app.put', 'app.delete', or similar framework \
+routing calls, and report the exact path/method text found in the decorator. \
+Example query for that specific case:
   MATCH (fn:Function) WHERE fn.repo_id = $repo_id AND size(fn.decorators) > 0
   RETURN fn.file_path, fn.name, fn.decorators
   Then filter the returned decorators yourself for routing calls (router.get, \
 app.post, etc.) rather than trying to filter for them inside the Cypher WHERE clause.
+- For general "explain this flow/feature" questions (e.g. authentication, a workflow, \
+how a feature works), decorators are IRRELEVANT — do not filter by or mention \
+decorators at all. Instead, find relevant files by path (as described above), then \
+return ALL functions those files CONTAIN regardless of whether they have decorators. \
+A plain function with no decorator (e.g. a React event handler like `handleLogin`) \
+can still be a completely valid and central part of the answer.
 """
 
 # Used when ENABLE_EMBEDDINGS is True — both tools are actually registered.
