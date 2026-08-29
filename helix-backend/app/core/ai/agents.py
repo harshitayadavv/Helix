@@ -12,7 +12,8 @@ from langchain_groq import ChatGroq
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from groq import RateLimitError
 from app.config import settings
 from app.core.ai.prompts import SYSTEM_PROMPT
 from app.core.graph.neo4j_client import neo4j_client
@@ -59,7 +60,11 @@ def _build_tools(repo_id: str):
             return f"Query failed: {exc}"
         if not rows:
             return "Query returned no results."
-        return "\n".join(str(row) for row in rows[:50])
+        truncated = rows[:15]
+        text = "\n".join(str(row) for row in truncated)
+        if len(rows) > 15:
+            text += f"\n... ({len(rows) - 15} more rows omitted for brevity)"
+        return text
 
     return [semantic_search, query_graph]
 
@@ -72,11 +77,20 @@ def _build_graph(repo_id: str):
     tools = _build_tools(repo_id)
     llm_with_tools = llm.bind_tools(tools)
 
+    @retry(
+        retry=retry_if_exception_type(RateLimitError),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True,
+    )
+    async def _invoke_with_retry(messages):
+        return await llm_with_tools.ainvoke(messages)
+
     async def agent_node(state: AgentState):
         messages = state["messages"]
         if not any(isinstance(m, SystemMessage) for m in messages):
             messages = [SystemMessage(content=SYSTEM_PROMPT), *messages]
-        response = await llm_with_tools.ainvoke(messages)
+        response = await _invoke_with_retry(messages)
         return {"messages": [response]}
 
     def should_continue(state: AgentState) -> str:
