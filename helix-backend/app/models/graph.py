@@ -33,6 +33,7 @@ class FunctionInfo(BaseModel):
     is_method: bool = False
     docstring: Optional[str] = None
     calls: List[str] = Field(default_factory=list)  # names of functions called within this function
+    decorators: List[str] = Field(default_factory=list)  # e.g. ["router.post('/debates')"], "@" stripped
 
 
 class ClassInfo(BaseModel):

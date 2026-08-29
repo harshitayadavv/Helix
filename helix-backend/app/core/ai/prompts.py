@@ -36,6 +36,11 @@ on multiple related keywords (e.g. path CONTAINS 'auth' OR path CONTAINS 'login'
 path CONTAINS 'session'), then return everything that File CONTAINS, rather than \
 filtering Function.name by the same keyword. If a name-based search returns nothing, \
 retry once with a path-based search before concluding the feature doesn't exist.
+- Function nodes may have a `decorators` property (a list of strings, e.g. \
+["router.post('/debates')"]). To find real API endpoints (as opposed to guessing \
+from function names), query for functions whose decorators contain 'router.', \
+'app.get', 'app.post', 'app.put', 'app.delete', or similar framework routing calls, \
+and report the exact path/method text found in the decorator rather than inferring it.
 """
 
 CYPHER_GENERATION_GUIDE = """Useful node labels: File, Function, Class, Module.

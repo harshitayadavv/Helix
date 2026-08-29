@@ -350,6 +350,24 @@ def _calls_within(call_matches: List[Dict[str, Node]], start_byte: int, end_byte
                 names.append(name)
     return names
 
+def _extract_decorators(func_node: Node, source: bytes) -> List[str]:
+    """
+    Collect decorator text for a function (e.g. "router.post('/debates')").
+
+    Python's tree-sitter grammar hangs decorators off a wrapping
+    `decorated_definition` node, not the function_definition itself, so
+    a decorated function's actual parent is the decorated_definition —
+    this walks up one level and pulls the sibling `decorator` children.
+    The leading '@' is stripped since it's implied.
+    """
+    parent = func_node.parent
+    if parent is None or parent.type != "decorated_definition":
+        return []
+    decorators: List[str] = []
+    for child in parent.children:
+        if child.type == "decorator":
+            decorators.append(_text(child, source).lstrip("@").strip())
+    return decorators
 
 def _find_body(node: Node) -> Optional[Node]:
     return next(
@@ -449,6 +467,7 @@ class ASTParser:
                     is_method=func_node.type in ("method_definition", "method_declaration"),
                     docstring=_extract_docstring(body, source),
                     calls=_calls_within(call_matches, func_node.start_byte, func_node.end_byte, source),
+                    decorators=_extract_decorators(func_node, source),
                 )
             )
         return functions
@@ -492,6 +511,7 @@ class ASTParser:
                             is_method=True,
                             docstring=_extract_docstring(body, source),
                             calls=_calls_within(call_matches, fn_node.start_byte, fn_node.end_byte, source),
+                            decorators=_extract_decorators(fn_node, source),
                         )
                     )
 

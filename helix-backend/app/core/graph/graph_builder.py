@@ -79,6 +79,7 @@ class GraphBuilder:
                 "start_line": fn.start_line, "end_line": fn.end_line,
                 "is_async": fn.is_async, "is_method": fn.is_method,
                 "parameters": fn.parameters, "docstring": fn.docstring or "",
+                "decorators": fn.decorators,
             }
             for pf in parsed_files for fn in pf.functions
         ]
@@ -96,7 +97,8 @@ class GraphBuilder:
             fn_node.is_async = fn.is_async,
             fn_node.is_method = fn.is_method,
             fn_node.parameters = fn.parameters,
-            fn_node.docstring = fn.docstring
+            fn_node.docstring = fn.docstring,
+            fn_node.decorators = fn.decorators
         MERGE (f)-[:CONTAINS]->(fn_node)
         """
         await neo4j_client.execute_write(query, {"repo_id": self.repo_id, "functions": functions})
@@ -126,6 +128,7 @@ class GraphBuilder:
                 "class_id": cls.id, "path": pf.path, "id": m.id, "name": m.name,
                 "start_line": m.start_line, "end_line": m.end_line,
                 "is_async": m.is_async, "parameters": m.parameters, "docstring": m.docstring or "",
+                "decorators": m.decorators,
             }
             for pf in parsed_files for cls in pf.classes for m in cls.methods
         ]
@@ -137,7 +140,7 @@ class GraphBuilder:
             SET mn.name = m.name, mn.repo_id = $repo_id, mn.file_path = m.path,
                 mn.start_line = m.start_line, mn.end_line = m.end_line,
                 mn.is_async = m.is_async, mn.is_method = true, mn.parameters = m.parameters,
-                mn.docstring = m.docstring
+                mn.docstring = m.docstring, mn.decorators = m.decorators
             MERGE (c)-[:CONTAINS]->(mn)
             """
             await neo4j_client.execute_write(method_query, {"repo_id": self.repo_id, "methods": methods})
