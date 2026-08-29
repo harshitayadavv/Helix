@@ -40,7 +40,14 @@ _RISK_THRESHOLDS = [
 
 # Common API route name patterns
 _ROUTE_PATTERNS = ["route", "endpoint", "handler", "view", "controller", "api"]
-
+# Filenames that conventionally serve as an application's entry point.
+# These are structurally invisible to import-based BFS (nothing is
+# supposed to import them — they're what gets run), so a low dependent
+# count for one of these is not evidence of low risk; it's the opposite.
+_ENTRY_POINT_FILENAMES = {
+    "main.py", "app.py", "manage.py", "wsgi.py", "asgi.py", "__main__.py",
+    "index.js", "index.ts", "server.js", "server.ts", "app.js", "app.ts",
+}
 
 @dataclass
 class AffectedNode:
@@ -75,9 +82,10 @@ class ImpactAnalyzer:
 
     async def analyze(self, node_id: str, node_type: str) -> ImpactReport:
         affected = await self._bfs_dependents(node_id, node_type)
-        risk = self._compute_risk(len(affected))
+        is_entry_point = node_type.lower() == "file" and self._is_entry_point(node_id)
+        risk = "Critical" if is_entry_point else self._compute_risk(len(affected))
         endpoints = self._find_broken_endpoints(affected)
-        summary = await self._generate_summary(node_id, affected, risk)
+        summary = await self._generate_summary(node_id, affected, risk, is_entry_point=is_entry_point)
 
         return ImpactReport(
             source_node_id=node_id,
@@ -161,6 +169,11 @@ class ImpactAnalyzer:
             if affected_count >= threshold:
                 risk = label
         return risk
+    
+    @staticmethod
+    def _is_entry_point(file_path: str) -> bool:
+        filename = file_path.rsplit("/", 1)[-1]
+        return filename in _ENTRY_POINT_FILENAMES
 
     def _find_broken_endpoints(self, affected: List[AffectedNode]) -> List[str]:
         endpoints = []
@@ -170,9 +183,11 @@ class ImpactAnalyzer:
                 endpoints.append(f"{node.name} ({node.file_path})")
         return endpoints
 
-    async def _generate_summary(self, node_id: str, affected: List[AffectedNode], risk: str) -> str:
+    async def _generate_summary(
+        self, node_id: str, affected: List[AffectedNode], risk: str, is_entry_point: bool = False
+    ) -> str:
         if not settings.GROQ_API_KEY:
-            return self._fallback_summary(node_id, affected, risk)
+            return self._fallback_summary(node_id, affected, risk, is_entry_point=is_entry_point)
 
         depth_counts: Dict[int, int] = {}
         for n in affected:
@@ -185,11 +200,21 @@ class ImpactAnalyzer:
         if len(affected) > 20:
             affected_text += f"\n... and {len(affected) - 20} more."
 
+        entry_point_note = (
+            "\nNOTE: this file is a conventional application ENTRY POINT (e.g. main.py). "
+            "Nothing else in the codebase is expected to import it, so a low/zero dependent "
+            "count here does NOT mean low risk — quite the opposite: this is the file that "
+            "starts the whole application, so deleting or badly breaking it takes the entire "
+            "app down even though no other file 'depends' on it in the graph."
+            if is_entry_point else ""
+        )
+
         prompt = f"""A developer is about to change or delete this code node:
   Node: {node_id}
   Risk Level: {risk}
   Total affected nodes: {len(affected)}
   Depth breakdown: {depth_counts}
+{entry_point_note}
 
 Affected dependents:
 {affected_text or 'None found.'}
@@ -214,7 +239,15 @@ Be specific, reference actual names, and be direct."""
             return self._fallback_summary(node_id, affected, risk)
 
     @staticmethod
-    def _fallback_summary(node_id: str, affected: List[AffectedNode], risk: str) -> str:
+    def _fallback_summary(
+        node_id: str, affected: List[AffectedNode], risk: str, is_entry_point: bool = False
+    ) -> str:
+        if is_entry_point:
+            return (
+                f"`{node_id}` is the application's entry point. No other file is expected to "
+                f"import it, so the low dependent count in the graph does not reflect real risk — "
+                f"deleting or breaking it will prevent the entire application from starting."
+            )
         if not affected:
             return f"No dependents found for `{node_id}`. Changes to this node appear to be low risk."
         names = [n.name for n in affected[:5]]
