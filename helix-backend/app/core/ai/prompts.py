@@ -41,6 +41,11 @@ retry once with a path-based search before concluding the feature doesn't exist.
 from function names), query for functions whose decorators contain 'router.', \
 'app.get', 'app.post', 'app.put', 'app.delete', or similar framework routing calls, \
 and report the exact path/method text found in the decorator rather than inferring it.
+- Example: to find API endpoints, run a single query like:
+  MATCH (fn:Function) WHERE fn.repo_id = $repo_id AND size(fn.decorators) > 0
+  RETURN fn.file_path, fn.name, fn.decorators
+  Then filter the returned decorators yourself for routing calls (router.get, \
+app.post, etc.) rather than trying to filter for them inside the Cypher WHERE clause.
 """
 
 CYPHER_GENERATION_GUIDE = """Useful node labels: File, Function, Class, Module.

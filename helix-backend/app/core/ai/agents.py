@@ -66,7 +66,9 @@ def _build_tools(repo_id: str):
             text += f"\n... ({len(rows) - 15} more rows omitted for brevity)"
         return text
 
-    return [semantic_search, query_graph]
+    if settings.ENABLE_EMBEDDINGS:
+        return [semantic_search, query_graph]
+    return [query_graph]
 
 
 def _build_graph(repo_id: str):
