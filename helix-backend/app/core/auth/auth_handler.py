@@ -181,6 +181,24 @@ async def get_current_account_id(
 
     return str(matched.id)
 
+async def get_account_id_or_public(
+    repo_id: str,
+    request: Request,
+    raw_key: Optional[str] = Depends(api_key_header),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[str]:
+    """
+    Like get_current_account_id, but allows anonymous, unauthenticated
+    access when repo_id matches the configured public demo repo — and
+    ONLY that one repo. Every other repo_id still requires a valid
+    X-API-Key exactly as before. Returns None for the public-demo case
+    (there is no owning account); callers must treat a None account_id
+    as "skip the ownership check, this is the public demo."
+    """
+    if settings.PUBLIC_DEMO_REPO_ID and repo_id == settings.PUBLIC_DEMO_REPO_ID:
+        return None
+    return await get_current_account_id(request=request, raw_key=raw_key, db=db)
+
 async def _enforce_rate_limits(key_prefix: str, path: str) -> None:
     r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:

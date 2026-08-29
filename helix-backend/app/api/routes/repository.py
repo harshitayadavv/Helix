@@ -14,7 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.auth.auth_handler import get_current_account_id
+from app.core.auth.auth_handler import get_current_account_id, get_account_id_or_public
 from app.core.graph.neo4j_client import neo4j_client
 from app.db.postgres import AsyncSessionLocal, RepositoryModel, get_db
 from app.models.repository import RepoStatus, RepositoryOut
@@ -115,14 +115,17 @@ async def upload_repository(
 async def get_repository_status(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    account_id: str = Depends(get_current_account_id),
+    account_id: Optional[str] = Depends(get_account_id_or_public),
 ):
-    result = await db.execute(
-        select(RepositoryModel).where(
+    if account_id is None:
+        # Public demo repo path: no ownership filter, anyone can view it.
+        query = select(RepositoryModel).where(RepositoryModel.id == repo_id)
+    else:
+        query = select(RepositoryModel).where(
             RepositoryModel.id == repo_id,
             RepositoryModel.owner_account_id == account_id,
         )
-    )
+    result = await db.execute(query)
     repo = result.scalar_one_or_none()
     if repo is None:
         # Same 404 whether the repo doesn't exist or belongs to someone

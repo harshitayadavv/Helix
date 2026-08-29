@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # --- Embeddings ---
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     EMBEDDING_DIM: int = 384
+    
+    # --- Public demo repo (viewable without auth) ---
+    PUBLIC_DEMO_REPO_ID: str = ""
 
     # --- Repository storage ---
     REPO_STORAGE_PATH: str = "./storage/repos"
