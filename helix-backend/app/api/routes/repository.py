@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select, update
