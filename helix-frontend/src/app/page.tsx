@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Zap, GitBranch, MessageSquare, BarChart3, ArrowRight, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+const DEMO_REPO_ID = process.env.NEXT_PUBLIC_DEMO_REPO_ID || '';
+
 const FEATURES = [
   { icon: GitBranch, title: 'Dependency graphs', desc: 'Visual maps of every import, call, and inheritance chain across your codebase.' },
   { icon: MessageSquare, title: 'AI-native chat', desc: 'Ask questions about any function, file, or module. Get answers grounded in your actual code.' },
@@ -68,9 +70,11 @@ export default function Home() {
                 Try Helix free <ArrowRight size={15} />
               </Button>
             </Link>
-            <Link href="/repo/demo">
-              <Button variant="secondary" size="lg">View demo repo</Button>
-            </Link>
+            {DEMO_REPO_ID && (
+              <Link href={`/repo/${DEMO_REPO_ID}`}>
+                <Button variant="secondary" size="lg">View demo repo</Button>
+              </Link>
+            )}
           </div>
         </motion.div>
 
