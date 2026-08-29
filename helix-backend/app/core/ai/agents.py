@@ -78,7 +78,6 @@ def _build_graph(repo_id: str):
         api_key=settings.GROQ_API_KEY,
         temperature=settings.GROQ_TEMPERATURE,
         max_tokens=4096,
-        reasoning_format="hidden",
     )
     tools = _build_tools(repo_id)
     llm_with_tools = llm.bind_tools(tools)
