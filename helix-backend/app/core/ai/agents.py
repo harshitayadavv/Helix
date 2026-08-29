@@ -84,11 +84,10 @@ def _build_graph(repo_id: str):
     )
     tools = _build_tools(repo_id)
     llm_with_tools = llm.bind_tools(tools)
-
     @retry(
         retry=retry_if_exception_type(RateLimitError),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
         reraise=True,
     )
     async def _invoke_with_retry(messages):
@@ -126,7 +125,7 @@ async def run_agent_query(question: str, repo_id: str) -> str:
         compiled_graph = _build_graph(repo_id)
         result = await compiled_graph.ainvoke(
             {"messages": [HumanMessage(content=question)], "repo_id": repo_id},
-            config={"recursion_limit": 30},
+            config={"recursion_limit": 14},
         )
         final_message = result["messages"][-1]
         content = getattr(final_message, "content", None)
