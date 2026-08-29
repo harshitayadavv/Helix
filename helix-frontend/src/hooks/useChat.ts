@@ -35,12 +35,15 @@ export function useChat(repoId: string) {
           )
         );
       });
-    } catch {
+    } catch (err) {
+      const isTimeout =
+        err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'ECONNABORTED';
+      const message = isTimeout
+        ? "That took longer than expected. The AI may still be thinking — try asking again in a moment."
+        : 'Failed to get response. Check your connection.';
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: 'Failed to get response. Check your connection.', isStreaming: false }
-            : m
+          m.id === assistantId ? { ...m, content: message, isStreaming: false } : m
         )
       );
     } finally {

@@ -83,7 +83,11 @@ export const sendChatMessage = async (
   question: string,
   onChunk: (chunk: string) => void
 ): Promise<void> => {
-  const res = await api.post('/ai/ask', { repo_id: repoId, question });
+  const res = await api.post(
+    '/ai/ask',
+    { repo_id: repoId, question },
+    { timeout: 90000 } // AI answers can involve several tool-call round trips; 30s default was too short
+  );
   const answer: string = res.data?.answer || res.data?.response || '';
   // Simulate word-by-word for UX consistency
   const words = answer.split(' ');
