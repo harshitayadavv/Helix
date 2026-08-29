@@ -15,7 +15,7 @@ from langgraph.prebuilt import ToolNode
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from groq import RateLimitError
 from app.config import settings
-from app.core.ai.prompts import SYSTEM_PROMPT
+from app.core.ai.prompts import SYSTEM_PROMPT, SYSTEM_PROMPT_NO_SEMANTIC_SEARCH
 from app.core.graph.neo4j_client import neo4j_client
 from app.core.search.hybrid_search import hybrid_search
 
@@ -97,7 +97,8 @@ def _build_graph(repo_id: str):
     async def agent_node(state: AgentState):
         messages = state["messages"]
         if not any(isinstance(m, SystemMessage) for m in messages):
-            messages = [SystemMessage(content=SYSTEM_PROMPT), *messages]
+            active_prompt = SYSTEM_PROMPT if settings.ENABLE_EMBEDDINGS else SYSTEM_PROMPT_NO_SEMANTIC_SEARCH
+            messages = [SystemMessage(content=active_prompt), *messages]
         response = await _invoke_with_retry(messages)
         return {"messages": [response]}
 
