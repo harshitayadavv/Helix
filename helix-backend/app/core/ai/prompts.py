@@ -23,6 +23,19 @@ must filter by repo_id.
 - Be efficient: use at most 3-4 tool calls total. Once you have enough information \
 to give a reasonably complete answer, stop calling tools and write your final answer \
 rather than continuing to search for more.
+- You have EXACTLY two tools available: `semantic_search` and `query_graph`. Never call \
+any other tool name (e.g. repo_browser, container, apply_patch, file browsing tools) — \
+they do not exist here and will fail. If you need to look at a file, use `query_graph` \
+to inspect the File/Function/Class nodes for it instead.
+- IMPORTANT: a file's PATH is a much stronger signal than a function's NAME. For \
+example, authentication logic usually lives in files with "auth", "login", "signup", \
+or "session" in their path, but the functions inside are often named things like \
+`handleLogin`, `handleSignup`, `LoginPage`, or `get_supabase` — none of which contain \
+the word "auth". When searching for a concept, prefer filtering File.path with CONTAINS \
+on multiple related keywords (e.g. path CONTAINS 'auth' OR path CONTAINS 'login' OR \
+path CONTAINS 'session'), then return everything that File CONTAINS, rather than \
+filtering Function.name by the same keyword. If a name-based search returns nothing, \
+retry once with a path-based search before concluding the feature doesn't exist.
 """
 
 CYPHER_GENERATION_GUIDE = """Useful node labels: File, Function, Class, Module.
@@ -30,4 +43,10 @@ Useful relationships: (:File)-[:CONTAINS]->(:Function|:Class), \
 (:Function)-[:CALLS]->(:Function), (:Class)-[:INHERITS]->(:Class), \
 (:File)-[:IMPORTS]->(:Module|:File).
 Every node has a `repo_id` property; always filter on it.
+
+A file's PATH is a much stronger signal than a function's NAME when searching for a \
+concept (e.g. authentication code often lives under paths containing "auth"/"login"/ \
+"signup", even when the functions inside are named things like `handleLogin`). Prefer \
+filtering on File.path with CONTAINS across a few related keywords, then traverse \
+CONTAINS to see what's inside, rather than filtering Function.name directly.
 """
